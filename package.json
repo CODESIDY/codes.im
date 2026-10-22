@@ -27,6 +27,7 @@
     "gpt-tokenizer": "4.0.0",
     "marked": "18.1.0",
     "qrcode-generator": "2.0.4",
+    "sharp": "0.34.5",
     "sql-formatter": "15.9.0",
     "tailwindcss": "^4.3.3",
     "yaml": "2.9.1"
