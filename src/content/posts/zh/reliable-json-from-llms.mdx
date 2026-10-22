@@ -1,0 +1,132 @@
+---
+title: 让大模型稳定输出 JSON：从 Prompt 到结构化输出的 5 个层次
+description: 模型返回的 JSON 总是多一个逗号、少一个括号？按可靠性从低到高，讲清楚 prompt 约束、JSON 模式、结构化输出、Schema 校验与自动修复该怎么组合。
+date: 2026-10-22
+category: ai
+kind: tutorial
+featured: true
+cover: ../images/reliable-json.png
+coverAlt: 一段合法的 JSON 代码示意图
+tags: [llm, json, structured-output]
+tools: [json-schema-generator, json-repair, json-to-zod]
+---
+
+import Callout from '../../../components/content/Callout.astro';
+import ToolEmbed from '../../../components/content/ToolEmbed.astro';
+
+让模型“返回 JSON”很容易，让它**每一次**都返回能被程序直接解析、字段齐全的 JSON 却不容易。线上常见的问题有这些：
+
+- 回复里带着 ```` ```json ```` 代码块和一句“好的，以下是结果”；
+- 末尾多一个逗号、键名用了单引号、出现 Python 的 `True` / `None`；
+- `max_tokens` 不够，JSON 写到一半被截断；
+- 格式没问题，但少了字段，或者字段类型不对。
+
+这篇文章按可靠性从低到高介绍 5 个层次。实际项目里通常是**组合使用**，而不是只选一个。
+
+## 1. 在 Prompt 里把格式说清楚
+
+最基础的一层：明确告诉模型输出格式，并给出一个示例。
+
+```text
+请从下面的会议记录中提取信息。
+只输出一个 JSON 对象，不要输出任何解释、不要使用 Markdown 代码块。
+格式如下：
+{"title": "string", "action_items": [{"owner": "string", "task": "string"}]}
+```
+
+这一层成本最低，但只是“建议”，模型仍然可能不遵守。适合原型阶段，不适合直接上线。
+
+## 2. 使用 JSON 模式
+
+很多 API 提供“JSON 模式”，保证输出是**语法合法**的 JSON。比如 OpenAI Chat Completions 的：
+
+```json
+{ "response_format": { "type": "json_object" } }
+```
+
+它解决了语法问题，但**不保证结构**：字段名、字段类型、必填项仍然可能和你预期的不一样。
+
+## 3. 使用结构化输出（Structured Outputs）
+
+更可靠的做法是把 JSON Schema 交给 API，让模型在生成时就受 schema 约束。
+
+**OpenAI**：`response_format` 使用 `json_schema` 并开启 `strict`：
+
+```json
+{
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "meeting_notes",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "due": { "type": ["string", "null"] }
+        },
+        "required": ["title", "due"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+```
+
+注意严格模式的两个要求：**所有字段都必须出现在 `required` 中**（可选字段写成和 `null` 的联合类型），每个对象都要设置 `additionalProperties: false`。
+
+**Anthropic Claude**：可以定义一个工具，把期望的结构写在 `input_schema` 里，再用 `tool_choice: {"type": "tool", "name": "..."}` 强制模型调用它。返回的 `tool_use` 块里的 `input` 就是你要的结构化数据。
+
+**Google Gemini**：在 `generationConfig` 中设置 `responseMimeType: "application/json"` 和 `responseSchema`。
+
+<Callout type="tip" title="不想手写 Schema？">
+  把一段期望的 JSON 示例粘贴到 [JSON Schema 生成器](/zh/json-schema-generator/)，打开严格模式，就能直接得到 OpenAI `response_format` 或 Anthropic tool 格式的定义。
+</Callout>
+
+## 4. 在代码里校验
+
+即使用了结构化输出，也建议在程序里再校验一次：模型可能拒答、被安全策略拦截，或者被截断；业务上也常有 schema 表达不了的约束（比如日期必须在未来）。
+
+在 TypeScript 里可以用 Zod：
+
+```ts
+import { z } from 'zod';
+
+const MeetingNotes = z.object({
+  title: z.string(),
+  action_items: z.array(z.object({ owner: z.string(), task: z.string() })),
+});
+
+const result = MeetingNotes.safeParse(JSON.parse(text));
+if (!result.success) {
+  // 把 result.error 的信息带回给模型，让它修正后重试
+}
+```
+
+校验失败时，一个很有效的策略是：**把错误信息连同原始输出一起发回模型，让它修正**，通常一到两次重试就能成功。
+
+<Callout type="note">
+  [JSON 转 Zod](/zh/json-to-zod/) 可以根据示例 JSON 直接生成上面这样的 schema 和对应的 TypeScript 类型。
+</Callout>
+
+## 5. 自动修复，作为最后一道保险
+
+对于不支持结构化输出的模型（很多开源模型和代理服务），或者历史日志里已经存在的“坏 JSON”，可以在解析失败时先尝试自动修复：去掉代码块和多余文字、补全引号和逗号、转换 `True` / `None`、闭合被截断的括号。
+
+下面就是一个可以直接试用的修复工具，示例里包含了上面提到的大部分问题：
+
+<ToolEmbed slug="json-repair" lang="zh" />
+
+<Callout type="warning" title="修复不是万能的">
+  被截断的内容无法找回，修复只能让 JSON 合法，不能保证数据完整。遇到截断时，优先检查结束原因（OpenAI 的 `finish_reason: "length"`、Anthropic 的 `stop_reason: "max_tokens"`），并调大 token 上限。
+</Callout>
+
+## 推荐组合
+
+| 场景 | 推荐做法 |
+| --- | --- |
+| 原型、一次性脚本 | 第 1 层 + 第 5 层 |
+| 支持结构化输出的生产环境 | 第 3 层 + 第 4 层（失败时带错误重试） |
+| 开源模型 / 不支持结构化输出 | 第 1、2 层 + 第 4 层 + 第 5 层 |
+
+核心思路是：**让 API 尽量在生成阶段约束格式，再在代码里校验，把修复当作兜底**。

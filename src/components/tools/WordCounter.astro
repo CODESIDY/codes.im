@@ -1,0 +1,187 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    ph: 'Paste or type your text…',
+    mixed: 'Word count',
+    mixedHint: 'CJK characters + other words',
+    words: 'Words',
+    cjk: 'CJK characters',
+    chars: 'Characters',
+    charsNoSpaces: 'Characters (no spaces)',
+    sentences: 'Sentences',
+    paragraphs: 'Paragraphs',
+    lines: 'Lines',
+    punctuation: 'Punctuation',
+    bytes: 'Bytes (UTF-8)',
+    reading: 'Reading time',
+    speaking: 'Speaking time',
+    tokens: 'LLM tokens',
+    top: 'Top words',
+    limits: 'Length limits',
+  },
+  zh: {
+    ph: '粘贴或输入文字…',
+    mixed: '字数',
+    mixedHint: '中文字符 + 英文单词，与 Word / WPS 统计方式一致',
+    words: '英文单词',
+    cjk: '中文字符',
+    chars: '字符数',
+    charsNoSpaces: '字符数（不含空格）',
+    sentences: '句子',
+    paragraphs: '段落',
+    lines: '行数',
+    punctuation: '标点',
+    bytes: '字节（UTF-8）',
+    reading: '阅读时长',
+    speaking: '朗读时长',
+    tokens: '大模型 Token',
+    top: '高频词',
+    limits: '常见字数限制',
+  },
+}[lang];
+const big = ['mixed', 'chars', 'reading'] as const;
+const small = ['cjk', 'words', 'charsNoSpaces', 'sentences', 'paragraphs', 'lines', 'punctuation', 'bytes', 'speaking', 'tokens'] as const;
+const limits =
+  lang === 'zh'
+    ? [
+        ['小红书正文', 1000],
+        ['公众号摘要', 120],
+        ['短信（单条）', 70],
+        ['SEO 标题（建议）', 30],
+        ['SEO 描述（建议）', 80],
+      ]
+    : [
+        ['X / Twitter post', 280],
+        ['SEO title (guideline)', 60],
+        ['Meta description (guideline)', 160],
+        ['LinkedIn post', 3000],
+        ['SMS (GSM-7)', 160],
+      ];
+---
+
+<div id="wc" data-l={JSON.stringify(L)} data-lang={lang} data-limits={JSON.stringify(limits)}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="wc-in">{t('common.input')}</label>
+    <button type="button" class="btn px-2 py-1 text-xs" id="wc-clear">{t('common.clear')}</button>
+  </div>
+  <textarea id="wc-in" class="field min-h-64!" placeholder={L.ph}></textarea>
+
+  <div class="mt-4 grid gap-3 sm:grid-cols-3">
+    {
+      big.map((k) => (
+        <div class="rounded-xl bg-brand-50 px-4 py-3 dark:bg-brand-500/10">
+          <p class="text-xs text-brand-700 dark:text-brand-400">{L[k]}</p>
+          <p id={`wc-${k}`} class="font-mono text-3xl font-semibold text-zinc-900 dark:text-zinc-50">0</p>
+          {k === 'mixed' && <p class="mt-0.5 text-[11px] text-zinc-500">{L.mixedHint}</p>}
+        </div>
+      ))
+    }
+  </div>
+  <dl class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+    {
+      small.map((k) => (
+        <div class="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
+          <dt class="text-xs text-zinc-500">{L[k]}</dt>
+          <dd id={`wc-${k}`} class="font-mono text-sm text-zinc-900 dark:text-zinc-100">0</dd>
+        </div>
+      ))
+    }
+  </dl>
+
+  <div class="mt-5 grid gap-5 md:grid-cols-2">
+    <div>
+      <p class="label">{L.top}</p>
+      <ol id="wc-top" class="flex flex-wrap gap-1.5 text-sm"></ol>
+    </div>
+    <div>
+      <p class="label">{L.limits}</p>
+      <ul id="wc-limits" class="space-y-1.5 text-sm"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { formatMinutes, textStats, topWords } from '../../lib/text-stats';
+
+  const root = document.getElementById('wc')!;
+  const lang = root.dataset.lang as 'en' | 'zh';
+  const limits: [string, number][] = JSON.parse(root.dataset.limits!);
+  const input = document.getElementById('wc-in') as HTMLTextAreaElement;
+  const set = (k: string, v: string | number) => (document.getElementById(`wc-${k}`)!.textContent = typeof v === 'number' ? v.toLocaleString() : v);
+
+  type Enc = { encode: (s: string) => number[] };
+  let enc: Promise<Enc> | undefined;
+  let tokTimer = 0;
+
+  function render() {
+    const s = input.value;
+    const st = textStats(s);
+    set('mixed', st.mixedCount);
+    set('chars', st.chars);
+    set('reading', formatMinutes(st.readingMinutes, lang));
+    set('cjk', st.cjk);
+    set('words', st.words);
+    set('charsNoSpaces', st.charsNoSpaces);
+    set('sentences', st.sentences);
+    set('paragraphs', st.paragraphs);
+    set('lines', st.lines);
+    set('punctuation', st.punctuation);
+    set('bytes', st.bytes);
+    set('speaking', formatMinutes(st.speakingMinutes, lang));
+
+    const top = document.getElementById('wc-top')!;
+    top.replaceChildren(
+      ...topWords(s, 12).map(([w, n]) => {
+        const li = document.createElement('li');
+        li.className = 'rounded-md border border-zinc-200 px-2 py-0.5 dark:border-zinc-700';
+        li.textContent = `${w} · ${n}`;
+        return li;
+      }),
+    );
+
+    // Limits are measured in characters (X counts CJK as 2, which we approximate).
+    const ul = document.getElementById('wc-limits')!;
+    ul.replaceChildren(
+      ...limits.map(([name, max]) => {
+        const used = name.startsWith('X') ? st.chars + st.cjk : st.chars;
+        const li = document.createElement('li');
+        li.className = 'flex items-center gap-3';
+        const label = document.createElement('span');
+        label.className = 'w-36 shrink-0 text-zinc-600 dark:text-zinc-400';
+        label.textContent = name;
+        const bar = document.createElement('span');
+        bar.className = 'h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800';
+        const fill = document.createElement('span');
+        fill.className = 'block h-full rounded-full ' + (used > max ? 'bg-red-500' : 'bg-brand-500');
+        fill.style.width = `${Math.min(100, (used / max) * 100)}%`;
+        bar.append(fill);
+        const n = document.createElement('span');
+        n.className = 'w-24 text-right font-mono text-xs ' + (used > max ? 'text-red-600 dark:text-red-400' : 'text-zinc-500');
+        n.textContent = `${used}/${max}`;
+        li.append(label, bar, n);
+        return li;
+      }),
+    );
+
+    clearTimeout(tokTimer);
+    if (!s) return set('tokens', 0);
+    tokTimer = window.setTimeout(async () => {
+      enc ??= import('gpt-tokenizer/encoding/o200k_base') as Promise<Enc>;
+      set('tokens', (await enc).encode(s).length);
+    }, 300);
+  }
+
+  input.addEventListener('input', render);
+  document.getElementById('wc-clear')!.addEventListener('click', () => {
+    input.value = '';
+    render();
+    input.focus();
+  });
+  render();
+</script>

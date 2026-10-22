@@ -1,0 +1,144 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    a: 'Original JSON',
+    b: 'Changed JSON',
+    order: 'Ignore array order',
+    same: 'No differences — the two documents are equivalent (key order is ignored).',
+    added: 'added',
+    removed: 'removed',
+    changed: 'changed',
+    format: 'Sort keys & format both',
+  },
+  zh: {
+    a: '原始 JSON',
+    b: '修改后的 JSON',
+    order: '忽略数组顺序',
+    same: '没有差异 —— 两个文档等价（已忽略键的顺序）。',
+    added: '新增',
+    removed: '删除',
+    changed: '修改',
+    format: '排序键并格式化两侧',
+  },
+}[lang];
+---
+
+<div id="jd" data-l={JSON.stringify(L)}>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="checkbox" id="jd-order" class="sr-only" />{L.order}</label>
+    <button type="button" class="btn px-2 py-1 text-xs" id="jd-format">{L.format}</button>
+    <button type="button" class="btn px-2 py-1 text-xs" id="jd-swap">{t('common.swap')}</button>
+    <button type="button" class="btn px-2 py-1 text-xs" id="jd-sample">{t('common.sample')}</button>
+  </div>
+  <div class="grid gap-4 md:grid-cols-2">
+    <div><span class="label">{L.a}</span><textarea id="jd-a" class="field min-h-64!" spellcheck="false"></textarea></div>
+    <div><span class="label">{L.b}</span><textarea id="jd-b" class="field min-h-64!" spellcheck="false"></textarea></div>
+  </div>
+  <p id="jd-err" class="mt-3 error-box" hidden></p>
+  <p id="jd-sum" class="mt-4 flex flex-wrap gap-2 text-xs"></p>
+  <ul id="jd-list" class="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200 font-mono text-[13px] empty:hidden dark:divide-zinc-800 dark:border-zinc-800"></ul>
+</div>
+
+<script>
+  import { canonical, diffJson, summarize } from '../../lib/json-diff';
+
+  const root = document.getElementById('jd')!;
+  const L = JSON.parse(root.dataset.l!);
+  const a = document.getElementById('jd-a') as HTMLTextAreaElement;
+  const b = document.getElementById('jd-b') as HTMLTextAreaElement;
+  const order = document.getElementById('jd-order') as HTMLInputElement;
+  const err = document.getElementById('jd-err')!;
+  const sum = document.getElementById('jd-sum')!;
+  const list = document.getElementById('jd-list')!;
+
+  const style = {
+    added: ['+', 'text-emerald-700 dark:text-emerald-400', 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'],
+    removed: ['−', 'text-red-700 dark:text-red-400', 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'],
+    changed: ['~', 'text-amber-700 dark:text-amber-400', 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'],
+  } as const;
+  const short = (v: unknown) => {
+    const s = JSON.stringify(v);
+    return s.length > 120 ? s.slice(0, 117) + '…' : s;
+  };
+  const parse = (el: HTMLTextAreaElement, label: string) => {
+    try {
+      return JSON.parse(el.value);
+    } catch (e) {
+      throw new Error(`${label}: ${(e as Error).message}`);
+    }
+  };
+
+  function run() {
+    err.hidden = true;
+    sum.replaceChildren();
+    list.replaceChildren();
+    if (!a.value.trim() || !b.value.trim()) return;
+    let changes;
+    try {
+      changes = diffJson(parse(a, L.a), parse(b, L.b), { ignoreArrayOrder: order.checked });
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+      return;
+    }
+    if (!changes.length) {
+      const p = document.createElement('span');
+      p.className = 'ok-box w-full';
+      p.textContent = L.same;
+      sum.append(p);
+      return;
+    }
+    const s = summarize(changes);
+    for (const k of ['added', 'removed', 'changed'] as const) {
+      const chip = document.createElement('span');
+      chip.className = `rounded-md px-2 py-1 font-medium ${style[k][2]}`;
+      chip.textContent = `${s[k]} ${L[k]}`;
+      sum.append(chip);
+    }
+    for (const c of changes) {
+      const li = document.createElement('li');
+      li.className = 'flex gap-3 px-3 py-2';
+      const sign = document.createElement('span');
+      sign.className = `w-3 shrink-0 font-bold ${style[c.kind][1]}`;
+      sign.textContent = style[c.kind][0];
+      const body = document.createElement('div');
+      body.className = 'min-w-0 break-all';
+      const path = document.createElement('div');
+      path.className = 'text-zinc-900 dark:text-zinc-100';
+      path.textContent = c.path;
+      const val = document.createElement('div');
+      val.className = 'text-zinc-500';
+      val.textContent = c.kind === 'changed' ? `${short(c.before)} → ${short(c.after)}` : short(c.kind === 'added' ? c.after : c.before);
+      body.append(path, val);
+      li.append(sign, body);
+      list.append(li);
+    }
+  }
+
+  root.addEventListener('input', run);
+  document.getElementById('jd-swap')!.addEventListener('click', () => {
+    [a.value, b.value] = [b.value, a.value];
+    run();
+  });
+  document.getElementById('jd-format')!.addEventListener('click', () => {
+    try {
+      a.value = canonical(parse(a, L.a));
+      b.value = canonical(parse(b, L.b));
+      run();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  });
+  document.getElementById('jd-sample')!.addEventListener('click', () => {
+    a.value = JSON.stringify({ id: 42, name: 'Ada', roles: ['admin', 'dev'], settings: { theme: 'dark', beta: false }, legacy: true }, null, 2);
+    b.value = JSON.stringify({ name: 'Ada Lovelace', id: 42, roles: ['admin', 'dev', 'ops'], settings: { theme: 'light', beta: false }, email: 'ada@example.com' }, null, 2);
+    run();
+  });
+</script>

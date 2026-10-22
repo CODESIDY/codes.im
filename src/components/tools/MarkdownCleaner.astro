@@ -1,0 +1,104 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { plain: 'Plain text', rich: 'Rich text', bullets: 'Keep list bullets', links: 'Keep link URLs', emoji: 'Remove emoji', cites: 'Remove citations [1]', input: 'AI response (Markdown)', copyRich: 'Copy rich text', richHint: 'Paste into Word, Google Docs, Notion, email, Feishu or WeChat — formatting is kept.' },
+  zh: { plain: '纯文本', rich: '富文本', bullets: '保留列表符号', links: '保留链接地址', emoji: '去掉 emoji', cites: '去掉引用标记 [1]', input: 'AI 回答（Markdown）', copyRich: '复制富文本', richHint: '可直接粘贴到 Word、飞书文档、Notion、邮件或公众号编辑器，格式会保留。' },
+}[lang];
+const sample =
+  lang === 'zh'
+    ? '## 🚀 三个提升效率的小技巧\n\n下面是我的建议 [1]：\n\n1. **批量处理**：把同类任务集中在一起做。\n2. **番茄工作法**：每 25 分钟休息 5 分钟。\n3. 使用 `快捷键`，减少鼠标操作。\n\n| 方法 | 难度 |\n|---|---|\n| 批量处理 | 低 |\n| 番茄工作法 | 中 |\n\n> 小结：先从最简单的开始 ✅\n\n更多内容见 [这篇文章](https://example.com)。'
+    : '## 🚀 Three productivity tips\n\nHere is what I recommend [1]:\n\n1. **Batch similar tasks** together.\n2. **Pomodoro**: work 25 minutes, rest 5.\n3. Learn `keyboard shortcuts`.\n\n| Method | Effort |\n|---|---|\n| Batching | Low |\n| Pomodoro | Medium |\n\n> TL;DR: start with the easiest one ✅\n\nRead more in [this article](https://example.com).';
+---
+
+<div id="mdc">
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="mdc-mode" value="plain" checked class="sr-only" />{L.plain}</label>
+    <label class="chip"><input type="radio" name="mdc-mode" value="rich" class="sr-only" />{L.rich}</label>
+    <span class="mx-2 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+    <label class="chip"><input type="checkbox" id="mdc-bullets" checked class="sr-only" />{L.bullets}</label>
+    <label class="chip"><input type="checkbox" id="mdc-links" class="sr-only" />{L.links}</label>
+    <label class="chip"><input type="checkbox" id="mdc-emoji" checked class="sr-only" />{L.emoji}</label>
+    <label class="chip"><input type="checkbox" id="mdc-cites" checked class="sr-only" />{L.cites}</label>
+    <button type="button" class="btn ml-auto px-2 py-1 text-xs" id="mdc-clear">{t('common.clear')}</button>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="mdc-in">{L.input}</label>
+      <textarea id="mdc-in" class="field min-h-96" spellcheck="false">{sample}</textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{t('common.output')}</span>
+        <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" id="mdc-copy">{t('common.copy')}</button>
+      </div>
+      <textarea id="mdc-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+      <div id="mdc-rich" class="field min-h-96 overflow-auto bg-white! text-zinc-900! dark:bg-white!" hidden></div>
+      <p id="mdc-hint" class="mt-2 text-xs text-zinc-500" hidden>{L.richHint}</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { copyText, flash } from '../../scripts/copy';
+  import { markdownToPlain, markdownToRichHtml, type CleanOptions } from '../../lib/markdown';
+
+  const root = document.getElementById('mdc')!;
+  const input = document.getElementById('mdc-in') as HTMLTextAreaElement;
+  const out = document.getElementById('mdc-out') as HTMLTextAreaElement;
+  const rich = document.getElementById('mdc-rich')!;
+  const hint = document.getElementById('mdc-hint')!;
+  const copyBtn = document.getElementById('mdc-copy')!;
+  const opt = (id: string) => (document.getElementById(`mdc-${id}`) as HTMLInputElement).checked;
+  const mode = () => (root.querySelector('input[name="mdc-mode"]:checked') as HTMLInputElement).value;
+
+  function options(): CleanOptions {
+    return { bullets: opt('bullets'), linkUrls: opt('links'), removeEmoji: opt('emoji'), removeCitations: opt('cites') };
+  }
+
+  function run() {
+    const isRich = mode() === 'rich';
+    out.hidden = isRich;
+    rich.hidden = hint.hidden = !isRich;
+    if (isRich) rich.innerHTML = markdownToRichHtml(input.value, options());
+    else out.value = markdownToPlain(input.value, options());
+  }
+
+  copyBtn.addEventListener('click', async () => {
+    if (mode() !== 'rich') return copyText(out.value, copyBtn);
+    const html = rich.innerHTML;
+    const text = markdownToPlain(input.value, options());
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+        }),
+      ]);
+      flash(copyBtn);
+    } catch {
+      // Fallback: select the rendered HTML and use execCommand.
+      const range = document.createRange();
+      range.selectNodeContents(rich);
+      const sel = getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('copy');
+      sel.removeAllRanges();
+      flash(copyBtn);
+    }
+  });
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  document.getElementById('mdc-clear')!.addEventListener('click', () => {
+    input.value = '';
+    run();
+    input.focus();
+  });
+  run();
+</script>

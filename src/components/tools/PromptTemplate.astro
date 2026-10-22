@@ -1,0 +1,166 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { template: 'Template', syntax: 'Syntax', auto: 'Auto', vars: 'Variables', none: 'No variables found. Use {{name}}, {name} or ${name}.', preview: 'Filled prompt', tokens: 'tokens', chars: 'chars', missing: 'unfilled', code: 'Export as code' },
+  zh: { template: '模板', syntax: '语法', auto: '自动', vars: '变量', none: '没有找到变量，请使用 {{name}}、{name} 或 ${name} 格式。', preview: '填充后的 prompt', tokens: 'token', chars: '字符', missing: '个未填', code: '导出为代码' },
+}[lang];
+const sample =
+  lang === 'zh'
+    ? '你是一名{{role}}。\n\n请阅读下面的文档，用{{language}}写一段不超过 {{max_words}} 字的摘要，并列出 3 个要点。\n\n<document>\n{{document}}\n</document>\n\n输出 JSON：{"summary": "...", "points": ["..."]}'
+    : 'You are a {{role}}.\n\nRead the document below and write a summary in {{language}} of at most {{max_words}} words, followed by 3 key points.\n\n<document>\n{{document}}\n</document>\n\nReturn JSON: {"summary": "...", "points": ["..."]}';
+---
+
+<div id="pt" data-l={JSON.stringify(L)}>
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <label class="label mb-0" for="pt-in">{L.template}</label>
+        <span class="flex flex-wrap items-center gap-1">
+          <span class="mr-1 text-xs text-zinc-500">{L.syntax}</span>
+          <label class="chip"><input type="radio" name="pt-syn" value="auto" checked class="sr-only" />{L.auto}</label>
+          <label class="chip font-mono"><input type="radio" name="pt-syn" value="double" class="sr-only" />{'{{x}}'}</label>
+          <label class="chip font-mono"><input type="radio" name="pt-syn" value="single" class="sr-only" />{'{x}'}</label>
+          <label class="chip font-mono"><input type="radio" name="pt-syn" value="dollar" class="sr-only" />{'${x}'}</label>
+        </span>
+      </div>
+      <textarea id="pt-in" class="field min-h-64" spellcheck="false">{sample}</textarea>
+
+      <h3 class="mt-5 mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.vars}</h3>
+      <div id="pt-vars" class="space-y-3"></div>
+    </div>
+
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{L.preview}</span>
+        <span class="flex items-center gap-3">
+          <span id="pt-stats" class="font-mono text-xs text-zinc-500"></span>
+          <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#pt-out">{t('common.copy')}</button>
+        </span>
+      </div>
+      <pre id="pt-out" class="min-h-64 overflow-auto rounded-lg bg-zinc-50 p-3 text-sm leading-6 whitespace-pre-wrap dark:bg-zinc-800/50"></pre>
+
+      <div class="mt-5 mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span class="label mb-0">{L.code}</span>
+        <span class="flex gap-1">
+          <label class="chip"><input type="radio" name="pt-lang" value="python" checked class="sr-only" />Python</label>
+          <label class="chip"><input type="radio" name="pt-lang" value="js" class="sr-only" />JavaScript</label>
+          <button type="button" class="btn ml-1 px-2 py-0.5 text-xs" data-copy="#pt-code">{t('common.copy')}</button>
+        </span>
+      </div>
+      <pre id="pt-code" class="code max-h-72 overflow-auto rounded-lg bg-zinc-900 p-3 text-zinc-100 dark:bg-black"></pre>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  #pt-out mark {
+    background: oklch(0.92 0.08 85 / 0.8);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 2px;
+  }
+  .dark #pt-out mark {
+    background: oklch(0.42 0.08 85 / 0.6);
+  }
+</style>
+
+<script>
+  import { PATTERNS, detectSyntax, fillTemplate, findVariables, toCode, type Syntax } from '../../lib/prompt-template';
+
+  type Enc = { countTokens: (s: string) => number };
+
+  const root = document.getElementById('pt')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('pt-in') as HTMLTextAreaElement;
+  const varsEl = document.getElementById('pt-vars')!;
+  const out = document.getElementById('pt-out')!;
+  const code = document.getElementById('pt-code')!;
+  const stats = document.getElementById('pt-stats')!;
+  const values: Record<string, string> = {};
+  let enc: Enc | null = null;
+  import('gpt-tokenizer/encoding/o200k_base').then((m) => {
+    enc = m as unknown as Enc;
+    render();
+  });
+
+  const radio = (n: string) => (root.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement).value;
+  const syntax = (): Syntax => {
+    const v = radio('pt-syn');
+    return v === 'auto' ? detectSyntax(input.value) : (v as Syntax);
+  };
+
+  function buildForm() {
+    const names = findVariables(input.value, syntax());
+    const existing = new Map([...varsEl.querySelectorAll<HTMLElement>('[data-var]')].map((el) => [el.dataset.var!, el]));
+    if (!names.length) {
+      const p = document.createElement('p');
+      p.className = 'text-sm text-zinc-500';
+      p.textContent = L.none;
+      varsEl.replaceChildren(p);
+      return;
+    }
+    varsEl.replaceChildren(
+      ...names.map((n) => {
+        const keep = existing.get(n);
+        if (keep) return keep;
+        const wrap = document.createElement('div');
+        wrap.dataset.var = n;
+        const label = document.createElement('label');
+        label.className = 'mb-1 block font-mono text-xs text-zinc-500';
+        label.textContent = n;
+        const long = /doc|text|content|context|input|article|code|文档|内容/i.test(n);
+        const field = document.createElement(long ? 'textarea' : 'input') as HTMLInputElement | HTMLTextAreaElement;
+        field.className = 'field' + (long ? ' min-h-24!' : '');
+        field.value = values[n] ?? '';
+        field.spellcheck = false;
+        field.addEventListener('input', () => {
+          values[n] = field.value;
+          render();
+        });
+        label.htmlFor = field.id = `pt-var-${n}`;
+        wrap.append(label, field);
+        return wrap;
+      }),
+    );
+  }
+
+  function render() {
+    const syn = syntax();
+    const filled = fillTemplate(input.value, syn, values);
+    // Highlight unfilled placeholders.
+    const names = findVariables(input.value, syn);
+    const missing = names.filter((n) => !values[n]);
+    const re = new RegExp(PATTERNS[syn].source, 'g');
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (const m of filled.matchAll(re)) {
+      if (!missing.includes(m[1])) continue;
+      frag.append(filled.slice(last, m.index));
+      const mark = document.createElement('mark');
+      mark.textContent = m[0];
+      frag.append(mark);
+      last = m.index! + m[0].length;
+    }
+    frag.append(filled.slice(last));
+    out.replaceChildren(frag);
+    const tokens = enc ? enc.countTokens(filled).toLocaleString() : '…';
+    stats.textContent = `${tokens} ${L.tokens} · ${[...filled].length.toLocaleString()} ${L.chars}${missing.length ? ` · ${missing.length} ${L.missing}` : ''}`;
+    code.textContent = toCode(input.value, syn, values, radio('pt-lang') as 'python' | 'js');
+  }
+
+  input.addEventListener('input', () => {
+    buildForm();
+    render();
+  });
+  root.addEventListener('change', (e) => {
+    if ((e.target as HTMLInputElement).name === 'pt-syn') buildForm();
+    render();
+  });
+  buildForm();
+  render();
+</script>

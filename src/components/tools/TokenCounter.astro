@@ -1,0 +1,144 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { tokenizer: 'Tokenizer', o200k: 'o200k_base · GPT-4o / 4.1 / 5, o-series', cl100k: 'cl100k_base · GPT-4 / GPT-3.5', tokens: 'Tokens', chars: 'Characters', words: 'Words', lines: 'Lines', ratio: 'Chars / token', show: 'Show tokens', loading: 'Loading tokenizer…', note: 'Counts are exact for OpenAI models. Claude, Gemini, DeepSeek and Qwen use their own tokenizers — treat this as an estimate for them.', truncated: 'Showing the first 3,000 tokens.', placeholder: 'Paste your prompt here…' },
+  zh: { tokenizer: '分词器', o200k: 'o200k_base · GPT-4o / 4.1 / 5、o 系列', cl100k: 'cl100k_base · GPT-4 / GPT-3.5', tokens: 'Token 数', chars: '字符数', words: '词数', lines: '行数', ratio: '字符 / token', show: '显示分词', loading: '正在加载分词器…', note: '对 OpenAI 模型是精确值。Claude、Gemini、DeepSeek、通义千问使用各自的分词器，结果仅供估算。', truncated: '仅显示前 3,000 个 token。', placeholder: '在这里粘贴你的 prompt…' },
+}[lang];
+const sample =
+  lang === 'zh'
+    ? '你是一名资深的前端工程师。请用 TypeScript 写一个 debounce 函数，并解释它和 throttle 的区别。\n\nYou are a senior frontend engineer.'
+    : 'You are a senior frontend engineer. Write a debounce function in TypeScript and explain how it differs from throttle.\n\n你好，世界！';
+---
+
+<div id="tk">
+  <div class="mb-3 flex flex-wrap items-center gap-2">
+    <span class="mr-1 text-sm text-zinc-600 dark:text-zinc-400">{L.tokenizer}</span>
+    <label class="chip"><input type="radio" name="tk-enc" value="o200k_base" checked class="sr-only" />{L.o200k}</label>
+    <label class="chip"><input type="radio" name="tk-enc" value="cl100k_base" class="sr-only" />{L.cl100k}</label>
+    <span class="ml-auto flex gap-2">
+      <label class="chip"><input type="checkbox" id="tk-show" checked class="sr-only" />{L.show}</label>
+      <button type="button" class="btn px-2 py-1 text-xs" id="tk-clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="tk-in" class="field min-h-56" spellcheck="false" placeholder={L.placeholder}>{sample}</textarea>
+
+  <dl class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+    {
+      [
+        ['tokens', L.tokens],
+        ['chars', L.chars],
+        ['words', L.words],
+        ['lines', L.lines],
+        ['ratio', L.ratio],
+      ].map(([id, label], i) => (
+        <div class={`rounded-lg px-3 py-2 ${i === 0 ? 'bg-brand-50 dark:bg-brand-500/10' : 'bg-zinc-50 dark:bg-zinc-800/50'}`}>
+          <dt class="text-xs text-zinc-500">{label}</dt>
+          <dd
+            id={`tk-${id}`}
+            class={`font-mono text-xl font-semibold tabular-nums ${i === 0 ? 'text-brand-700 dark:text-brand-400' : 'text-zinc-900 dark:text-zinc-100'}`}
+          >
+            –
+          </dd>
+        </div>
+      ))
+    }
+  </dl>
+  <p class="mt-2 text-xs text-zinc-500">{L.note}</p>
+
+  <div id="tk-viz-wrap" class="mt-4">
+    <div id="tk-viz" class="code max-h-96 overflow-auto rounded-lg border border-zinc-200 p-3 break-words whitespace-pre-wrap dark:border-zinc-800"></div>
+    <p id="tk-trunc" class="mt-1 text-xs text-zinc-500" hidden>{L.truncated}</p>
+  </div>
+</div>
+
+<style is:global>
+  #tk-viz span {
+    border-radius: 3px;
+    padding: 1px 0;
+  }
+  #tk-viz span:nth-child(5n + 1) { background: oklch(0.9 0.08 165 / 0.7); }
+  #tk-viz span:nth-child(5n + 2) { background: oklch(0.9 0.07 250 / 0.7); }
+  #tk-viz span:nth-child(5n + 3) { background: oklch(0.92 0.08 85 / 0.7); }
+  #tk-viz span:nth-child(5n + 4) { background: oklch(0.9 0.07 330 / 0.7); }
+  #tk-viz span:nth-child(5n + 5) { background: oklch(0.9 0.06 30 / 0.7); }
+  .dark #tk-viz span:nth-child(5n + 1) { background: oklch(0.4 0.08 165 / 0.6); }
+  .dark #tk-viz span:nth-child(5n + 2) { background: oklch(0.4 0.08 250 / 0.6); }
+  .dark #tk-viz span:nth-child(5n + 3) { background: oklch(0.42 0.07 85 / 0.6); }
+  .dark #tk-viz span:nth-child(5n + 4) { background: oklch(0.4 0.08 330 / 0.6); }
+  .dark #tk-viz span:nth-child(5n + 5) { background: oklch(0.4 0.07 30 / 0.6); }
+</style>
+
+<script>
+  type Enc = { encode: (s: string) => number[]; decode: (t: number[]) => string };
+
+  const root = document.getElementById('tk')!;
+  const input = document.getElementById('tk-in') as HTMLTextAreaElement;
+  const show = document.getElementById('tk-show') as HTMLInputElement;
+  const viz = document.getElementById('tk-viz')!;
+  const vizWrap = document.getElementById('tk-viz-wrap')!;
+  const trunc = document.getElementById('tk-trunc')!;
+  const $ = (id: string) => document.getElementById(`tk-${id}`)!;
+
+  // Load each tokenizer on demand (they are large) and cache it.
+  const loaders: Record<string, () => Promise<Enc>> = {
+    o200k_base: () => import('gpt-tokenizer/encoding/o200k_base') as Promise<Enc>,
+    cl100k_base: () => import('gpt-tokenizer/encoding/cl100k_base') as Promise<Enc>,
+  };
+  const cache: Record<string, Promise<Enc>> = {};
+  const getEnc = (name: string) => (cache[name] ??= loaders[name]());
+
+  const segmenter = new Intl.Segmenter(document.documentElement.lang, { granularity: 'word' });
+  function countWords(s: string) {
+    let n = 0;
+    for (const seg of segmenter.segment(s)) if (seg.isWordLike) n++;
+    return n;
+  }
+
+  let seq = 0;
+  let timer = 0;
+  async function run() {
+    const my = ++seq;
+    const text = input.value;
+    $('chars').textContent = [...text].length.toLocaleString();
+    $('words').textContent = countWords(text).toLocaleString();
+    $('lines').textContent = (text ? text.split('\n').length : 0).toLocaleString();
+    const encName = (root.querySelector('input[name="tk-enc"]:checked') as HTMLInputElement).value;
+    if (!cache[encName]) $('tokens').textContent = '…';
+    const enc = await getEnc(encName);
+    if (my !== seq) return;
+    const ids = enc.encode(text);
+    $('tokens').textContent = ids.length.toLocaleString();
+    $('ratio').textContent = ids.length ? ([...text].length / ids.length).toFixed(2) : '–';
+
+    vizWrap.hidden = !show.checked;
+    if (!show.checked) return;
+    const max = 3000;
+    const frag = document.createDocumentFragment();
+    for (const id of ids.slice(0, max)) {
+      const s = document.createElement('span');
+      s.textContent = enc.decode([id]);
+      s.title = `#${id}`;
+      frag.append(s);
+    }
+    viz.replaceChildren(frag);
+    trunc.hidden = ids.length <= max;
+  }
+
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 120);
+  };
+  input.addEventListener('input', schedule);
+  root.addEventListener('change', run);
+  document.getElementById('tk-clear')!.addEventListener('click', () => {
+    input.value = '';
+    run();
+    input.focus();
+  });
+  run();
+</script>

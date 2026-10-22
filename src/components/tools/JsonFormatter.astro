@@ -1,0 +1,115 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { format: 'Format', minify: 'Minify', sort: 'Sort keys', indent: 'Indent', valid: 'Valid JSON', line: 'Line', col: 'column', tab: 'Tab', spaces: 'spaces' },
+  zh: { format: '格式化', minify: '压缩', sort: '键排序', indent: '缩进', valid: 'JSON 格式正确', line: '第', col: '列', tab: 'Tab', spaces: '空格' },
+}[lang];
+const sample = '{"name":"codes.im","version":1,"private":true,"tags":["json","tools"],"author":{"name":"you","url":null}}';
+---
+
+<div id="jf" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-2">
+    <button type="button" class="btn btn-primary" data-act="format">{L.format}</button>
+    <button type="button" class="btn" data-act="minify">{L.minify}</button>
+    <label class="ml-1 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.indent}
+      <select id="jf-indent" class="field h-8 w-auto py-0">
+        <option value="2">2 {L.spaces}</option>
+        <option value="4">4 {L.spaces}</option>
+        <option value="tab">{L.tab}</option>
+      </select>
+    </label>
+    <label class="chip"><input type="checkbox" id="jf-sort" class="sr-only" />{L.sort}</label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="jf-in">{t('common.input')}</label>
+      <textarea id="jf-in" class="field min-h-80" spellcheck="false" placeholder='{"hello": "world"}'></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="jf-out">{t('common.output')}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#jf-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="jf-out" class="field min-h-80" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <div id="jf-status" class="mt-3 text-sm" aria-live="polite"></div>
+</div>
+
+<script>
+  import { formatJson, parseJson } from '../../lib/json';
+
+  const root = document.getElementById('jf')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('jf-in') as HTMLTextAreaElement;
+  const output = document.getElementById('jf-out') as HTMLTextAreaElement;
+  const indentSel = document.getElementById('jf-indent') as HTMLSelectElement;
+  const sort = document.getElementById('jf-sort') as HTMLInputElement;
+  const status = document.getElementById('jf-status')!;
+  let mode: 'format' | 'minify' = 'format';
+
+  function run() {
+    const text = input.value;
+    if (!text.trim()) {
+      output.value = '';
+      status.innerHTML = '';
+      return;
+    }
+    const r = parseJson(text);
+    if (!r.ok) {
+      output.value = '';
+      const pos =
+        r.error.line !== undefined
+          ? (root.closest('html')!.lang.startsWith('zh')
+              ? `${L.line} ${r.error.line} 行，第 ${r.error.column} ${L.col}：`
+              : `${L.line} ${r.error.line}, ${L.col} ${r.error.column}: `)
+          : '';
+      status.className = 'mt-3 error-box';
+      status.textContent = pos + r.error.message.replace(/\s*\(line \d+ column \d+\)/, '');
+      return;
+    }
+    const indent = indentSel.value === 'tab' ? '\t' : Number(indentSel.value);
+    output.value = mode === 'minify' ? formatJson(r.value, 0, sort.checked) : formatJson(r.value, indent, sort.checked);
+    const size = new Blob([output.value]).size;
+    status.className = 'mt-3 ok-box';
+    status.textContent = `✓ ${L.valid} · ${size.toLocaleString()} bytes`;
+  }
+
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'format' || act === 'minify') {
+      mode = act;
+      run();
+    } else if (act === 'sample') {
+      input.value = root.dataset.sample!;
+      mode = 'format';
+      run();
+    } else if (act === 'clear') {
+      input.value = '';
+      run();
+      input.focus();
+    }
+  });
+  input.addEventListener('input', run);
+  indentSel.addEventListener('change', () => {
+    mode = 'format';
+    run();
+  });
+  sort.addEventListener('change', run);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      mode = 'format';
+      run();
+    }
+  });
+</script>

@@ -1,0 +1,130 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { token: 'Encoded token', header: 'Header', payload: 'Payload', signature: 'Signature', claims: 'Time claims', valid: 'Not expired', expired: 'Expired', notyet: 'Not yet valid', noexp: 'No expiry (exp) set', exp: 'Expires', iat: 'Issued at', nbf: 'Not before', sigNote: 'Signature is not verified — that requires the secret or public key.' },
+  zh: { token: 'JWT 字符串', header: 'Header', payload: 'Payload', signature: '签名', claims: '时间字段', valid: '未过期', expired: '已过期', notyet: '尚未生效', noexp: '未设置过期时间（exp）', exp: '过期时间', iat: '签发时间', nbf: '生效时间', sigNote: '不会校验签名 —— 校验需要密钥或公钥。' },
+}[lang];
+const sample =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwfQ.heWaEsyBLLs8eaDRm0F0_Ba6Yj_h9nCpAwDPB8z9SyA';
+---
+
+<div id="jwt" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="jwt-in">{L.token}</label>
+    <span class="flex gap-2">
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="jwt-in" class="field min-h-28 break-all" spellcheck="false" placeholder="eyJhbGciOi..."></textarea>
+  <p id="jwt-err" class="mt-3 error-box" hidden></p>
+  <div id="jwt-status" class="mt-3" hidden></div>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0 text-rose-600 dark:text-rose-400">{L.header}</span>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#jwt-header">{t('common.copy')}</button>
+      </div>
+      <pre id="jwt-header" class="code min-h-24 overflow-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+      <div class="mt-4 mb-1.5 flex items-center justify-between">
+        <span class="label mb-0 text-sky-600 dark:text-sky-400">{L.signature}</span>
+      </div>
+      <pre id="jwt-sig" class="code overflow-auto rounded-lg bg-zinc-50 p-3 break-all whitespace-pre-wrap dark:bg-zinc-800/50"></pre>
+      <p class="mt-2 text-xs text-zinc-500">{L.sigNote}</p>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0 text-violet-600 dark:text-violet-400">{L.payload}</span>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#jwt-payload">{t('common.copy')}</button>
+      </div>
+      <pre id="jwt-payload" class="code min-h-40 overflow-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+      <dl id="jwt-claims" class="mt-3 space-y-1 text-sm"></dl>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { decodeJwt } from '../../lib/encoding';
+
+  const root = document.getElementById('jwt')!;
+  const L = JSON.parse(root.dataset.l!);
+  const locale = document.documentElement.lang;
+  const input = document.getElementById('jwt-in') as HTMLTextAreaElement;
+  const err = document.getElementById('jwt-err')!;
+  const status = document.getElementById('jwt-status')!;
+  const header = document.getElementById('jwt-header')!;
+  const payload = document.getElementById('jwt-payload')!;
+  const sig = document.getElementById('jwt-sig')!;
+  const claims = document.getElementById('jwt-claims')!;
+
+  function clear() {
+    header.textContent = payload.textContent = sig.textContent = '';
+    claims.replaceChildren();
+    status.hidden = true;
+  }
+
+  function run() {
+    err.hidden = true;
+    const v = input.value.trim();
+    if (!v) return clear();
+    let d;
+    try {
+      d = decodeJwt(v);
+    } catch (e) {
+      clear();
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+      return;
+    }
+    header.textContent = JSON.stringify(d.header, null, 2);
+    payload.textContent = JSON.stringify(d.payload, null, 2);
+    sig.textContent = d.signature;
+
+    const now = Date.now() / 1000;
+    const p = d.payload as Record<string, unknown>;
+    const items: Node[] = [];
+    for (const k of ['exp', 'iat', 'nbf'] as const) {
+      if (typeof p[k] !== 'number') continue;
+      const row = document.createElement('div');
+      row.className = 'flex gap-3';
+      const dt = document.createElement('dt');
+      dt.className = 'w-24 shrink-0 text-zinc-500';
+      dt.textContent = `${L[k]} (${k})`;
+      const dd = document.createElement('dd');
+      dd.className = 'font-mono text-[13px]';
+      dd.textContent = new Date((p[k] as number) * 1000).toLocaleString(locale);
+      row.append(dt, dd);
+      items.push(row);
+    }
+    claims.replaceChildren(...items);
+
+    status.hidden = false;
+    let msg = L.noexp;
+    let cls = 'ok-box';
+    if (typeof p.nbf === 'number' && p.nbf > now) {
+      msg = L.notyet;
+      cls = 'error-box';
+    } else if (typeof p.exp === 'number') {
+      const expired = p.exp < now;
+      msg = expired ? L.expired : L.valid;
+      cls = expired ? 'error-box' : 'ok-box';
+    }
+    status.className = `mt-3 ${cls}`;
+    status.textContent = `${cls === 'ok-box' ? '✓' : '✕'} ${msg} · alg: ${String(d.header.alg ?? '?')}`;
+  }
+
+  input.addEventListener('input', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+</script>

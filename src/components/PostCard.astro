@@ -1,0 +1,55 @@
+---
+import Cover from './blog/Cover.astro';
+import { useTranslations, type Lang } from '../i18n/ui';
+import { formatDate, postUrl, readingMinutes, type Post } from '../lib/posts';
+import { getCategory } from '../data/categories';
+
+interface Props {
+  post: Post;
+  lang: Lang;
+  /** "card" = cover on top (grid); "row" = cover on the left (list); "compact" = no cover. */
+  variant?: 'card' | 'row' | 'compact';
+}
+const { post, lang, variant = 'card' } = Astro.props;
+const t = useTranslations(lang);
+const d = post.data;
+const cat = getCategory(d.category);
+---
+
+<article
+  data-kind={d.kind}
+  class:list={[
+    'group relative overflow-hidden rounded-xl border border-zinc-200 bg-white transition hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-lg hover:shadow-brand-500/5 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-brand-500/60',
+    variant === 'row' && 'sm:flex',
+  ]}
+>
+  {
+    variant !== 'compact' && (
+      <Cover post={post} lang={lang} class={variant === 'row' ? 'hidden sm:block sm:m-3 sm:mr-0 sm:aspect-[1.91/1] sm:w-48 sm:shrink-0 sm:self-center sm:rounded-lg' : 'aspect-[1.91/1]'} width={variant === 'row' ? 192 : 400} badge={variant !== 'row'} />
+    )
+  }
+  <div class:list={['flex min-w-0 flex-1 flex-col', variant === 'row' ? 'px-4 py-3.5' : 'p-4']}>
+    <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+      {variant !== 'card' && cat && <span class="font-medium text-zinc-700 dark:text-zinc-300">{cat.emoji} {cat[lang]}</span>}
+      {variant !== 'card' && cat && <span>·</span>}
+      <time datetime={d.date.toISOString()}>{formatDate(d.date, lang)}</time>
+      <span>·</span>
+      <span>{readingMinutes(post.body)} {t('blog.min')}</span>
+      {d.kind === 'tutorial' && <span class="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-400">{t('blog.tutorial')}</span>}
+      {d.draft && <span class="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">{t('blog.draft')}</span>}
+    </div>
+    <h2 class="text-base leading-snug font-semibold tracking-tight text-zinc-900 group-hover:text-brand-700 dark:text-zinc-100 dark:group-hover:text-brand-400">
+      <a href={postUrl(post)} class="after:absolute after:inset-0">{d.title}</a>
+    </h2>
+    <p class="mt-1.5 line-clamp-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{d.description}</p>
+    {
+      d.tags.length > 0 && (
+        <p class:list={['mt-auto flex flex-wrap gap-x-2', variant === 'row' ? 'pt-2' : 'pt-3']}>
+          {d.tags.slice(0, 4).map((tag) => (
+            <span class="font-mono text-xs text-zinc-400">#{tag}</span>
+          ))}
+        </p>
+      )
+    }
+  </div>
+</article>

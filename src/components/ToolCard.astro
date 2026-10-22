@@ -1,0 +1,27 @@
+---
+import type { Lang } from '../i18n/ui';
+import type { Tool } from '../tools/registry';
+
+interface Props {
+  tool: Tool;
+  lang: Lang;
+}
+const { tool, lang } = Astro.props;
+const tx = tool.text[lang];
+---
+
+<a
+  href={`/${lang}/${tool.slug}/`}
+  class="group card flex gap-4 p-4 transition hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-brand-500/5 dark:hover:border-brand-500/60"
+>
+  <span
+    class="grid h-10 w-12 shrink-0 place-items-center rounded-lg bg-brand-50 font-mono text-[13px] font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-400"
+    >{tool.glyph}</span
+  >
+  <span class="min-w-0">
+    <span class="block font-medium text-zinc-900 group-hover:text-brand-700 dark:text-zinc-100 dark:group-hover:text-brand-400"
+      >{tx.name}</span
+    >
+    <span class="mt-1 line-clamp-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{tx.description}</span>
+  </span>
+</a>

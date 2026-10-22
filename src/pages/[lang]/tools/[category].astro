@@ -1,0 +1,72 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import ToolCard from '../../../components/ToolCard.astro';
+import { langs, useTranslations, type Lang } from '../../../i18n/ui';
+import { categories, tools, type Category } from '../../../tools/registry';
+import { categoryPages } from '../../../data/tool-categories';
+
+export function getStaticPaths() {
+  return langs.flatMap((lang) => categories.map((category) => ({ params: { lang, category } })));
+}
+
+const lang = Astro.params.lang as Lang;
+const category = Astro.params.category as Category;
+const t = useTranslations(lang);
+const page = categoryPages[category][lang];
+const list = tools.filter((tool) => tool.category === category);
+const url = `https://codes.im/${lang}/tools/${category}/`;
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: page.title,
+    description: page.description,
+    url,
+    inLanguage: lang === 'zh' ? 'zh-CN' : 'en',
+    mainEntity: {
+      '@type': 'ItemList',
+      itemListElement: list.map((tool, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: tool.text[lang].name,
+        url: `https://codes.im/${lang}/${tool.slug}/`,
+      })),
+    },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'codes.im', item: `https://codes.im/${lang}/` },
+      { '@type': 'ListItem', position: 2, name: t(`cat.${category}`), item: url },
+    ],
+  },
+];
+---
+
+<Layout lang={lang} title={page.title} description={page.description} jsonLd={jsonLd}>
+  <nav class="mb-4 text-xs text-zinc-500" aria-label="breadcrumb">
+    <a href={`/${lang}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{t('nav.tools')}</a>
+    <span class="mx-1.5">/</span>
+    <span>{t(`cat.${category}`)}</span>
+  </nav>
+  <h1 class="max-w-3xl text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-50">{page.title}</h1>
+  <p class="mt-3 max-w-3xl text-sm leading-7 text-zinc-600 dark:text-zinc-400">{page.intro}</p>
+
+  <div class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    {list.map((tool) => <ToolCard tool={tool} lang={lang} />)}
+  </div>
+
+  <nav class="mt-12 flex flex-wrap gap-2 text-sm" aria-label={t('home.all')}>
+    {
+      categories
+        .filter((c) => c !== category)
+        .map((c) => (
+          <a href={`/${lang}/tools/${c}/`} class="chip px-3 py-1.5 text-sm hover:border-brand-400">
+            {t(`cat.${c}`)}
+          </a>
+        ))
+    }
+  </nav>
+</Layout>

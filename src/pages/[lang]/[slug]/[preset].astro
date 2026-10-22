@@ -1,0 +1,357 @@
+---
+import { Code } from 'astro:components';
+import cronstrue from 'cronstrue/i18n';
+import Layout from '../../../layouts/Layout.astro';
+import { toolComponents } from '../../../components/tools';
+import { langs, useTranslations, type Lang } from '../../../i18n/ui';
+import { getTool } from '../../../tools/registry';
+import { BASE_FIELD, BASE_NAME, BASE_SHORT, CASE_NAME, CASE_USE, presets, presetsFor, type Preset } from '../../../data/presets';
+import { normalizeCron } from '../../../lib/cron';
+import { convertCase } from '../../../lib/case';
+import { parseBigInt, toBase } from '../../../lib/base';
+
+export function getStaticPaths() {
+  return langs.flatMap((lang) => presets.map((p) => ({ params: { lang, slug: p.tool, preset: p.slug }, props: { p } })));
+}
+
+const { p } = Astro.props as { p: Preset };
+const lang = Astro.params.lang as Lang;
+const zh = lang === 'zh';
+const t = useTranslations(lang);
+const tool = getTool(p.tool)!;
+const tx = tool.text[lang];
+const Widget = toolComponents[tool.slug];
+const url = `https://codes.im/${lang}/${tool.slug}/${p.slug}/`;
+const themes = { light: 'github-light', dark: 'github-dark' } as const;
+
+// ---------- per-kind content ----------
+let title = '';
+let h1 = '';
+let description = '';
+let intro = '';
+let state: Record<string, string> = {};
+let siblingLabel = (_: Preset) => '';
+
+const cronDesc = (expr: string, l: Lang) => cronstrue.toString(normalizeCron(expr), { locale: l === 'zh' ? 'zh_CN' : 'en', use24HourTimeFormat: true, verbose: true });
+
+// cron
+let cronFields: [string, string, string][] = [];
+let cronSnippets: [string, string, string][] = [];
+if (p.kind === 'cron') {
+  const label = p.label[lang];
+  title = zh ? `Cron ${label}执行一次：${p.expr} 表达式详解` : `Cron Job ${label[0].toUpperCase() + label.slice(1)}: ${p.expr} Explained`;
+  h1 = zh ? `${label}执行一次的 Cron 表达式` : `Cron expression for ${label}`;
+  const desc = cronDesc(p.expr, lang);
+  description = zh
+    ? `${label}执行的 Cron 表达式是 ${p.expr}（${desc}）。逐字段解释、未来执行时间，以及 Linux crontab、GitHub Actions、Kubernetes、Spring 的写法。`
+    : `The cron expression for ${label} is ${p.expr} (${desc}). Field-by-field explanation, upcoming run times, and the syntax for crontab, GitHub Actions, Kubernetes and Spring.`;
+  intro = zh
+    ? `要让任务${label}执行一次，使用下面的 Cron 表达式。它的含义是：${desc}。`
+    : `To run a job ${label}, use the cron expression below. It means: ${desc}.`;
+  state = { '#cron-in': p.expr };
+  const names = zh ? ['分钟', '小时', '日', '月', '星期'] : ['Minute', 'Hour', 'Day of month', 'Month', 'Day of week'];
+  const explain = (v: string, i: number) => {
+    if (v === '*') return zh ? '任意值' : 'any';
+    if (v.startsWith('*/')) return zh ? `每 ${v.slice(2)} 个单位` : `every ${v.slice(2)}`;
+    if (/^\d+-\d+$/.test(v)) return zh ? `从 ${v.replace('-', ' 到 ')}` : `${v.replace('-', ' through ')}`;
+    if (v.includes(',')) return zh ? `列表：${v}` : `list: ${v}`;
+    if (i === 4) {
+      const d = zh ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六', '周日'] : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      return d[Number(v)] ?? v;
+    }
+    return zh ? `等于 ${v}` : `exactly ${v}`;
+  };
+  cronFields = p.expr.split(' ').map((v, i) => [names[i], v, explain(v, i)]);
+  cronSnippets = [
+    ['Linux crontab', 'bash', `# crontab -e\n${p.expr} /path/to/script.sh >> /var/log/job.log 2>&1`],
+    [
+      'GitHub Actions',
+      'yaml',
+      `on:\n  schedule:\n    - cron: '${p.expr}'  # ${zh ? 'UTC 时间' : 'UTC'}${p.slug === 'every-minute' ? (zh ? '；实际最小间隔为 5 分钟' : '; minimum interval is 5 minutes') : ''}`,
+    ],
+    ['Kubernetes CronJob', 'yaml', `apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: my-job\nspec:\n  schedule: "${p.expr}"\n  timeZone: "${zh ? 'Asia/Shanghai' : 'America/New_York'}"\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          containers:\n            - name: job\n              image: busybox\n              command: ["date"]\n          restartPolicy: OnFailure`],
+    ['Spring @Scheduled', 'java', `// ${zh ? 'Spring 多一个“秒”字段，放在最前面' : 'Spring has an extra seconds field first'}\n@Scheduled(cron = "0 ${p.expr}")\npublic void run() { /* ... */ }`],
+  ];
+  siblingLabel = (s) => (s.kind === 'cron' ? s.label[lang] : '');
+}
+
+// base
+let baseSteps: string[] = [];
+let baseTable: [string, string][] = [];
+let baseSnippets: [string, string, string][] = [];
+if (p.kind === 'base') {
+  const from = BASE_NAME[p.from][lang];
+  const to = BASE_NAME[p.to][lang];
+  const value = parseBigInt(p.sample, p.from);
+  const result = toBase(value, p.to).toUpperCase();
+  title = zh ? `${from}转${to}：在线转换器与计算方法` : `${BASE_SHORT[p.from].en} to ${BASE_SHORT[p.to].en} Converter – How to Convert ${from[0].toUpperCase() + from.slice(1)} to ${to[0].toUpperCase() + to.slice(1)}`;
+  h1 = zh ? `${from}转${to}` : `${BASE_SHORT[p.from].en} to ${BASE_SHORT[p.to].en}`;
+  description = zh
+    ? `在线把${from}转换为${to}，附手算步骤、常用数值对照表以及 JavaScript / Python 代码。例如 ${p.sample.toUpperCase()}（${from}）= ${result}（${to}）。`
+    : `Convert ${from} to ${to} instantly, with a step-by-step method, a reference table and JavaScript / Python code. Example: ${p.sample.toUpperCase()} (${from}) = ${result} (${to}).`;
+  intro = zh ? `在下方输入${from}数字即可得到${to}结果，同时显示其他进制。下面也解释了手算方法。` : `Type a ${from} number below to get the ${to} value — other bases are shown too. The manual method is explained further down.`;
+  state = { [BASE_FIELD[p.from]]: p.sample };
+  const digits = p.sample.toUpperCase().split('');
+  if (p.to === 10) {
+    const terms = digits.map((d, i) => `${d}×${p.from}^${digits.length - 1 - i}`);
+    const vals = digits.map((d, i) => `${parseInt(d, p.from)}×${p.from ** (digits.length - 1 - i)}`);
+    baseSteps = zh
+      ? [`从右往左，每一位乘以 ${p.from} 的位次方（最右边是 ${p.from}⁰）：`, `${p.sample.toUpperCase()} = ${terms.join(' + ')}`, `= ${vals.join(' + ')}`, `= ${result}`]
+      : [`Multiply each digit by ${p.from} raised to its position, counting from 0 on the right:`, `${p.sample.toUpperCase()} = ${terms.join(' + ')}`, `= ${vals.join(' + ')}`, `= ${result}`];
+  } else if (p.from === 10) {
+    let n = Number(p.sample);
+    const rows: string[] = [];
+    while (n > 0) {
+      rows.push(`${n} ÷ ${p.to} = ${Math.floor(n / p.to)} … ${(n % p.to).toString(p.to).toUpperCase()}`);
+      n = Math.floor(n / p.to);
+    }
+    baseSteps = [zh ? `反复除以 ${p.to}，记下余数，再把余数从下往上读：` : `Divide by ${p.to} repeatedly, note each remainder, then read the remainders from bottom to top:`, ...rows, `→ ${result}`];
+  } else {
+    // hex <-> binary: 1 hex digit = 4 bits
+    if (p.from === 16) {
+      baseSteps = [zh ? '每个十六进制位正好对应 4 个二进制位，逐位替换即可：' : 'Each hex digit maps to exactly 4 bits, so replace digit by digit:', ...digits.map((d) => `${d} → ${parseInt(d, 16).toString(2).padStart(4, '0')}`), `→ ${result}`];
+    } else {
+      const padded = p.sample.padStart(Math.ceil(p.sample.length / 4) * 4, '0');
+      const groups = padded.match(/.{4}/g)!;
+      baseSteps = [zh ? '从右往左每 4 位一组（不足补 0），每组对应一个十六进制位：' : 'Group the bits in fours from the right (pad with zeros); each group is one hex digit:', ...groups.map((g) => `${g} → ${parseInt(g, 2).toString(16).toUpperCase()}`), `→ ${result}`];
+    }
+  }
+  const nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 32, 64, 100, 127, 128, 255, 256, 1000, 1024, 4096, 65535];
+  baseTable = nums.map((n) => [n.toString(p.from).toUpperCase(), n.toString(p.to).toUpperCase()]);
+  const js: Record<string, string> = {
+    '16-10': `parseInt('${p.sample}', 16) // ${result}`,
+    '10-16': `(${p.sample}).toString(16).toUpperCase() // '${result}'`,
+    '2-10': `parseInt('${p.sample}', 2) // ${result}`,
+    '10-2': `(${p.sample}).toString(2) // '${result}'`,
+    '16-2': `parseInt('${p.sample}', 16).toString(2) // '${result}'`,
+    '2-16': `parseInt('${p.sample}', 2).toString(16).toUpperCase() // '${result}'`,
+    '8-10': `parseInt('${p.sample}', 8) // ${result}`,
+    '10-8': `(${p.sample}).toString(8) // '${result}'`,
+  };
+  const py: Record<string, string> = {
+    '16-10': `int('${p.sample}', 16)  # ${result}`,
+    '10-16': `format(${p.sample}, 'X')  # '${result}'  (hex(${p.sample}) → '0x${result.toLowerCase()}')`,
+    '2-10': `int('${p.sample}', 2)  # ${result}`,
+    '10-2': `format(${p.sample}, 'b')  # '${result}'  (bin(${p.sample}) → '0b${result}')`,
+    '16-2': `format(int('${p.sample}', 16), 'b')  # '${result}'`,
+    '2-16': `format(int('${p.sample}', 2), 'X')  # '${result}'`,
+    '8-10': `int('${p.sample}', 8)  # ${result}`,
+    '10-8': `format(${p.sample}, 'o')  # '${result}'  (oct(${p.sample}) → '0o${result}')`,
+  };
+  const k = `${p.from}-${p.to}`;
+  baseSnippets = [
+    ['JavaScript', 'js', js[k]],
+    ['Python', 'python', py[k]],
+  ];
+  siblingLabel = (s) => (s.kind === 'base' ? (zh ? `${BASE_NAME[s.from].zh}转${BASE_NAME[s.to].zh}` : `${BASE_SHORT[s.from].en} to ${BASE_SHORT[s.to].en}`) : '');
+}
+
+// case
+let caseRows: [string, string][] = [];
+let caseSnippets: [string, string, string][] = [];
+if (p.kind === 'case') {
+  const a = CASE_NAME[p.from];
+  const b = CASE_NAME[p.to];
+  title = zh ? `${a} 转 ${b}：在线转换与 JS / Python 代码` : `${a} to ${b} Converter (with JavaScript & Python Code)`;
+  h1 = zh ? `${a} 转 ${b}` : `${a} to ${b}`;
+  description = zh
+    ? `把 ${a} 批量转换为 ${b}，正确处理 XMLHttpRequest 这类缩写，附 JavaScript 和 Python 实现代码。`
+    : `Convert ${a} identifiers to ${b} in bulk — acronyms like XMLHttpRequest handled correctly — plus JavaScript and Python code to do it yourself.`;
+  intro = zh
+    ? `${a} 常用于${CASE_USE[p.from]?.zh ?? ''}；${b} 常用于${CASE_USE[p.to]?.zh ?? ''}。在不同语言、数据库和接口之间传递数据时，经常需要在两者之间转换。`
+    : `${a} is common for ${CASE_USE[p.from]?.en ?? ''}; ${b} is used for ${CASE_USE[p.to]?.en ?? ''}. Moving data between languages, databases and APIs often means converting between the two.`;
+  state = { '#cc-in': p.examples.join('\n') };
+  caseRows = p.examples.map((e) => [e, convertCase(e, p.to)]);
+  caseSnippets = [
+    ['JavaScript', 'js', p.js],
+    ['Python', 'python', p.py],
+  ];
+  siblingLabel = (s) => (s.kind === 'case' ? `${CASE_NAME[s.from]} → ${CASE_NAME[s.to]}` : '');
+}
+
+const siblings = presetsFor(tool.slug).filter((s) => s.slug !== p.slug);
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'codes.im', item: `https://codes.im/${lang}/` },
+      { '@type': 'ListItem', position: 2, name: tx.name, item: `https://codes.im/${lang}/${tool.slug}/` },
+      { '@type': 'ListItem', position: 3, name: h1, item: url },
+    ],
+  },
+];
+const L = {
+  fields: zh ? '逐字段解释' : 'Field by field',
+  field: zh ? '字段' : 'Field',
+  value: zh ? '值' : 'Value',
+  meaning: zh ? '含义' : 'Meaning',
+  platforms: zh ? '在不同平台中的写法' : 'Syntax on different platforms',
+  tz: zh ? '注意：Cron 按运行环境的时区执行。服务器和 GitHub Actions 通常是 UTC，Kubernetes 可以用 timeZone 指定。' : 'Note: cron runs in the time zone of the machine or platform. Servers and GitHub Actions usually use UTC; Kubernetes lets you set timeZone.',
+  tryIt: zh ? '在线测试' : 'Try it',
+  method: zh ? '计算方法' : 'How to convert by hand',
+  table: zh ? '常用数值对照表' : 'Reference table',
+  code: zh ? '代码实现' : 'In code',
+  examples: zh ? '转换示例' : 'Examples',
+  input: zh ? '输入' : 'Input',
+  output: zh ? '输出' : 'Output',
+  more: zh ? '更多常用示例' : 'More examples',
+  open: zh ? `打开完整的${tx.name}` : `Open the full ${tx.name}`,
+};
+---
+
+<Layout lang={lang} title={title} description={description} jsonLd={jsonLd}>
+  <nav class="mb-4 text-xs text-zinc-500" aria-label="breadcrumb">
+    <a href={`/${lang}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{t('nav.tools')}</a>
+    <span class="mx-1.5">/</span>
+    <a href={`/${lang}/${tool.slug}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{tx.name}</a>
+  </nav>
+
+  <article class="max-w-3xl">
+    <h1 class="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-50">{h1}</h1>
+    <p class="mt-3 text-sm leading-7 text-zinc-600 dark:text-zinc-400">{intro}</p>
+
+    {
+      p.kind === 'cron' && (
+        <>
+          <div class="mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-brand-50 px-4 py-3 dark:bg-brand-500/10">
+            <code class="font-mono text-2xl font-semibold tracking-wider text-zinc-900 dark:text-zinc-50">{p.expr}</code>
+            <button type="button" class="btn px-2 py-1 text-xs" data-copy-text={p.expr}>
+              {t('common.copy')}
+            </button>
+            <span class="text-sm text-brand-700 dark:text-brand-400">{cronDesc(p.expr, lang)}</span>
+          </div>
+          <h2 class="mt-8 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{L.fields}</h2>
+          <table class="w-full text-sm">
+            <thead class="text-left text-xs text-zinc-500">
+              <tr>
+                <th class="py-1.5 pr-4 font-medium">{L.field}</th>
+                <th class="py-1.5 pr-4 font-medium">{L.value}</th>
+                <th class="py-1.5 font-medium">{L.meaning}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {cronFields.map(([f, v, m]) => (
+                <tr>
+                  <td class="py-1.5 pr-4 text-zinc-600 dark:text-zinc-400">{f}</td>
+                  <td class="py-1.5 pr-4 font-mono text-zinc-900 dark:text-zinc-100">{v}</td>
+                  <td class="py-1.5 text-zinc-600 dark:text-zinc-400">{m}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )
+    }
+
+    {
+      p.kind === 'case' && (
+        <>
+          <h2 class="mt-8 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{L.examples}</h2>
+          <table class="w-full font-mono text-sm">
+            <thead class="text-left font-sans text-xs text-zinc-500">
+              <tr>
+                <th class="py-1.5 pr-4 font-medium">{CASE_NAME[p.from]}</th>
+                <th class="py-1.5 font-medium">{CASE_NAME[p.to]}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {caseRows.map(([a, b]) => (
+                <tr>
+                  <td class="py-1.5 pr-4 text-zinc-600 dark:text-zinc-400">{a}</td>
+                  <td class="py-1.5 text-zinc-900 dark:text-zinc-100">{b}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )
+    }
+  </article>
+
+  <h2 class="mt-8 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{L.tryIt}</h2>
+  <div data-tool-slug={tool.slug} hidden></div>
+  <div data-preset-state={JSON.stringify(state)} hidden></div>
+  <section id="tool-widget" class="card p-4 sm:p-6">
+    <Widget lang={lang} />
+  </section>
+
+  <article class="prose-tool mt-2 max-w-3xl">
+    {
+      p.kind === 'cron' && (
+        <>
+          <h2>{L.platforms}</h2>
+          <div class="space-y-4">
+            {cronSnippets.map(([name, lng, code]) => (
+              <div>
+                <p class="mb-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">{name}</p>
+                <Code code={code} lang={lng as 'js'} themes={themes} defaultColor={false} />
+              </div>
+            ))}
+          </div>
+          <p class="mt-4">{L.tz}</p>
+        </>
+      )
+    }
+    {
+      p.kind === 'base' && (
+        <>
+          <h2>{L.method}</h2>
+          <div class="rounded-lg bg-zinc-50 p-4 font-mono text-[13px] leading-7 text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+            {baseSteps.map((s, i) => (
+              <div class={i === 0 ? 'mb-1 font-sans text-sm text-zinc-600 dark:text-zinc-400' : ''}>{s}</div>
+            ))}
+          </div>
+          <h2>{L.table}</h2>
+          <p class="mb-2 text-xs">
+            {BASE_SHORT[p.from][lang]} → {BASE_SHORT[p.to][lang]}
+          </p>
+          <div class="grid grid-cols-2 gap-x-8 sm:grid-cols-3">
+            {baseTable.map(([a, b]) => (
+              <div class="flex justify-between border-b border-zinc-100 py-1 font-mono text-[13px] dark:border-zinc-800">
+                <span class="text-zinc-500">{a}</span>
+                <span class="text-zinc-900 dark:text-zinc-100">{b}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )
+    }
+    {
+      (p.kind === 'base' || p.kind === 'case') && (
+        <>
+          <h2>{L.code}</h2>
+          <div class="space-y-4">
+            {(p.kind === 'base' ? baseSnippets : caseSnippets).map(([name, lng, code]) => (
+              <div>
+                <p class="mb-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">{name}</p>
+                <Code code={code} lang={lng as 'js'} themes={themes} defaultColor={false} />
+              </div>
+            ))}
+          </div>
+        </>
+      )
+    }
+
+    <h2>{L.more}</h2>
+    <ul class="flex flex-wrap gap-2">
+      {
+        siblings.map((s) => (
+          <li>
+            <a href={`/${lang}/${tool.slug}/${s.slug}/`} class="chip px-2.5 py-1 text-sm hover:border-brand-400">
+              {siblingLabel(s)}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="mt-6">
+      <a href={`/${lang}/${tool.slug}/`} class="font-medium text-brand-700 hover:underline dark:text-brand-400">{L.open} →</a>
+    </p>
+  </article>
+</Layout>
+
+<script>
+  import '../../../scripts/tool-page';
+</script>

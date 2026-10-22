@@ -1,0 +1,132 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    input: 'User-Agent string',
+    mine: 'Use my browser',
+    browser: 'Browser',
+    engine: 'Engine',
+    os: 'Operating system',
+    device: 'Device',
+    bot: 'Bot',
+    devices: { desktop: 'Desktop', mobile: 'Mobile', tablet: 'Tablet', bot: 'Bot / crawler', unknown: 'Unknown' },
+    kinds: { ai: 'AI crawler', search: 'Search engine', social: 'Link preview', tool: 'HTTP client / script', other: 'Bot' },
+    examples: 'Examples',
+    robots: 'robots.txt to block AI crawlers',
+    hints: 'Client Hints from this browser',
+    noHints: 'This browser does not expose User-Agent Client Hints.',
+  },
+  zh: {
+    input: 'User-Agent 字符串',
+    mine: '使用我的浏览器',
+    browser: '浏览器',
+    engine: '渲染引擎',
+    os: '操作系统',
+    device: '设备类型',
+    bot: '爬虫',
+    devices: { desktop: '桌面端', mobile: '手机', tablet: '平板', bot: '爬虫 / 机器人', unknown: '未知' },
+    kinds: { ai: 'AI 爬虫', search: '搜索引擎', social: '链接预览', tool: 'HTTP 客户端 / 脚本', other: '爬虫' },
+    examples: '示例',
+    robots: '屏蔽 AI 爬虫的 robots.txt',
+    hints: '当前浏览器的 Client Hints',
+    noHints: '当前浏览器不提供 User-Agent Client Hints。',
+  },
+}[lang];
+const examples: [string, string][] = [
+  ['Chrome / Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'],
+  ['Safari / iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1'],
+  ['WeChat / Android', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36 MicroMessenger/8.0.50'],
+  ['GPTBot', 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)'],
+  ['ClaudeBot', 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)'],
+  ['Googlebot', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'],
+  ['curl', 'curl/8.5.0'],
+];
+const fields = ['browser', 'engine', 'os', 'device', 'bot'] as const;
+---
+
+<div id="ua" data-l={JSON.stringify(L)}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="ua-in">{L.input}</label>
+    <button type="button" class="btn px-2 py-1 text-xs" id="ua-mine">{L.mine}</button>
+  </div>
+  <textarea id="ua-in" class="field min-h-20!" spellcheck="false"></textarea>
+  <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+    <span class="text-zinc-500">{L.examples}:</span>
+    {examples.map(([name, ua]) => <button type="button" class="kbd cursor-pointer hover:text-brand-700 dark:hover:text-brand-400" data-ua={ua}>{name}</button>)}
+  </div>
+
+  <dl class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+    {
+      fields.map((k) => (
+        <div class="rounded-lg bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/50">
+          <dt class="text-xs text-zinc-500">{L[k]}</dt>
+          <dd id={`ua-${k}`} class="mt-0.5 text-sm font-medium text-zinc-900 dark:text-zinc-100">—</dd>
+        </div>
+      ))
+    }
+  </dl>
+
+  <div class="mt-5 grid gap-5 md:grid-cols-2">
+    <div>
+      <p class="label">{L.hints}</p>
+      <pre id="ua-hints" class="code min-h-24 overflow-x-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{L.robots}</span>
+        <button type="button" class="btn px-2 py-1 text-xs" data-copy="#ua-robots">{t('common.copy')}</button>
+      </div>
+      <pre id="ua-robots" class="code max-h-48 overflow-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { aiRobotsTxt, parseUA } from '../../lib/ua';
+
+  const root = document.getElementById('ua')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('ua-in') as HTMLTextAreaElement;
+  const set = (k: string, v: string) => (document.getElementById(`ua-${k}`)!.textContent = v || '—');
+  const join = (...a: string[]) => a.filter(Boolean).join(' ');
+
+  function render() {
+    const r = parseUA(input.value);
+    set('browser', join(r.browser.name, r.browser.version));
+    set('engine', join(r.engine.name, r.engine.version));
+    set('os', join(r.os.name, r.os.version));
+    set('device', L.devices[r.device]);
+    set('bot', r.bot ? join(r.bot.name, r.bot.owner && `(${r.bot.owner})`, '·', L.kinds[r.bot.kind]) : '');
+  }
+
+  input.addEventListener('input', render);
+  document.getElementById('ua-mine')!.addEventListener('click', () => {
+    input.value = navigator.userAgent;
+    render();
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-ua]').forEach((b) =>
+    b.addEventListener('click', () => {
+      input.value = b.dataset.ua!;
+      render();
+    }),
+  );
+  document.getElementById('ua-robots')!.textContent = aiRobotsTxt();
+
+  // User-Agent Client Hints (Chromium browsers).
+  const hints = document.getElementById('ua-hints')!;
+  const uaData = (navigator as Navigator & { userAgentData?: { getHighEntropyValues(h: string[]): Promise<Record<string, unknown>> } }).userAgentData;
+  if (uaData) {
+    uaData
+      .getHighEntropyValues(['platform', 'platformVersion', 'architecture', 'model', 'fullVersionList', 'mobile'])
+      .then((v) => (hints.textContent = JSON.stringify(v, null, 2)))
+      .catch(() => (hints.textContent = L.noHints));
+  } else hints.textContent = L.noHints;
+
+  if (!input.value) input.value = navigator.userAgent;
+  render();
+</script>

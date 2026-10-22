@@ -1,0 +1,29 @@
+---
+import Layout from '../../../../layouts/Layout.astro';
+import BlogListing from '../../../../components/blog/BlogListing.astro';
+import { categories } from '../../../../data/categories';
+import { langs, useTranslations, type Lang } from '../../../../i18n/ui';
+import { getPosts } from '../../../../lib/posts';
+
+export function getStaticPaths() {
+  return langs.flatMap((lang) => categories.map((c) => ({ params: { lang, category: c.slug }, props: { cat: c } })));
+}
+
+const lang = Astro.params.lang as Lang;
+const t = useTranslations(lang);
+const { cat } = Astro.props;
+const all = await getPosts(lang);
+const posts = all.filter((p) => p.data.category === cat.slug);
+const title = `${cat[lang]} · ${t('blog.title')}`;
+---
+
+<Layout lang={lang} title={title} description={`${cat[lang]} — ${t('blog.description')}`}>
+  <BlogListing lang={lang} posts={posts} allPosts={all} active={cat.slug}>
+    <div slot="header">
+      <p class="font-mono text-sm text-brand-600 dark:text-brand-400">$ ls ./blog/{cat.slug}</p>
+      <h1 class="mt-2 flex items-center gap-3 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <span aria-hidden="true">{cat.emoji}</span>{cat[lang]}
+      </h1>
+    </div>
+  </BlogListing>
+</Layout>

@@ -1,0 +1,250 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    input: 'IP address / CIDR',
+    ph: '192.168.1.10/24 or 10.0.0.1 255.255.0.0',
+    network: 'Network',
+    broadcast: 'Broadcast',
+    first: 'First host',
+    last: 'Last host',
+    usable: 'Usable hosts',
+    total: 'Total addresses',
+    mask: 'Subnet mask',
+    wildcard: 'Wildcard mask',
+    cls: 'Class',
+    kind: 'Type',
+    binary: 'Binary',
+    check: 'Is this IP in the subnet?',
+    yes: 'Yes — inside',
+    no: 'No — outside',
+    split: 'Split into',
+    subnets: 'subnets',
+    showing: 'showing first',
+    range: 'IP range → CIDR',
+    start: 'Start IP',
+    end: 'End IP',
+    prefixes: 'Prefix cheat sheet',
+    kinds: { private: 'Private (RFC 1918)', public: 'Public', loopback: 'Loopback', 'link-local': 'Link-local', cgnat: 'Carrier-grade NAT', multicast: 'Multicast', reserved: 'Reserved', documentation: 'Documentation', unspecified: 'Unspecified' },
+  },
+  zh: {
+    input: 'IP 地址 / CIDR',
+    ph: '192.168.1.10/24 或 10.0.0.1 255.255.0.0',
+    network: '网络地址',
+    broadcast: '广播地址',
+    first: '第一个可用地址',
+    last: '最后一个可用地址',
+    usable: '可用主机数',
+    total: '地址总数',
+    mask: '子网掩码',
+    wildcard: '反掩码（通配符）',
+    cls: '地址类别',
+    kind: '地址类型',
+    binary: '二进制',
+    check: '某个 IP 是否在这个网段内？',
+    yes: '是 —— 在网段内',
+    no: '否 —— 不在网段内',
+    split: '划分为',
+    subnets: '个子网',
+    showing: '显示前',
+    range: 'IP 范围 → CIDR',
+    start: '起始 IP',
+    end: '结束 IP',
+    prefixes: '前缀速查',
+    kinds: { private: '私有地址（RFC 1918）', public: '公网地址', loopback: '回环地址', 'link-local': '链路本地', cgnat: '运营商级 NAT', multicast: '组播', reserved: '保留地址', documentation: '文档示例地址', unspecified: '未指定' },
+  },
+}[lang];
+const rows = ['network', 'broadcast', 'first', 'last', 'usable', 'total', 'mask', 'wildcard', 'cls', 'kind'] as const;
+const cheat = [32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 16, 12, 8].map((p) => {
+  const mask = p === 0 ? 0 : (0xffffffff << (32 - p)) >>> 0;
+  const total = 2 ** (32 - p);
+  return { p, mask: [24, 16, 8, 0].map((b) => (mask >>> b) & 255).join('.'), hosts: (p >= 31 ? total : total - 2).toLocaleString('en-US') };
+});
+---
+
+<div id="ci" data-l={JSON.stringify(L)}>
+  <label class="label" for="ci-in">{L.input}</label>
+  <div class="flex gap-2">
+    <input id="ci-in" class="field font-mono text-lg" value="192.168.1.130/26" placeholder={L.ph} spellcheck="false" autocomplete="off" />
+    <select id="ci-prefix" class="field w-24 font-mono" aria-label="Prefix">
+      {Array.from({ length: 33 }, (_, i) => 32 - i).map((p) => <option value={p}>/{p}</option>)}
+    </select>
+  </div>
+  <p id="ci-err" class="mt-3 error-box" hidden></p>
+
+  <div class="mt-4 grid gap-5 lg:grid-cols-[1fr_1fr]">
+    <dl class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">
+      {
+        rows.map((k) => (
+          <div class="flex items-center justify-between gap-3 px-3 py-2">
+            <dt class="text-zinc-500">{L[k]}</dt>
+            <dd class="flex items-center gap-2">
+              <span id={`ci-${k}`} class="font-mono text-zinc-900 dark:text-zinc-100" />
+              {['network', 'broadcast', 'mask', 'wildcard'].includes(k) && (
+                <button type="button" class="btn px-1.5 py-0.5 text-[11px]" data-copy={`#ci-${k}`}>
+                  {t('common.copy')}
+                </button>
+              )}
+            </dd>
+          </div>
+        ))
+      }
+    </dl>
+
+    <div class="space-y-4">
+      <div>
+        <p class="label">{L.binary}</p>
+        <pre id="ci-bin" class="code overflow-x-auto rounded-lg bg-zinc-50 p-3 text-[12px] dark:bg-zinc-800/50"></pre>
+      </div>
+      <div>
+        <label class="label" for="ci-check">{L.check}</label>
+        <input id="ci-check" class="field font-mono" placeholder="192.168.1.150" spellcheck="false" autocomplete="off" />
+        <p id="ci-check-out" class="mt-1.5 text-sm"></p>
+      </div>
+      <div>
+        <p class="label flex items-center gap-2">
+          {L.split}
+          <select id="ci-split" class="field h-7 w-20 py-0 font-mono text-xs"></select>
+        </p>
+        <p id="ci-split-info" class="mb-1 text-xs text-zinc-500"></p>
+        <ul id="ci-split-out" class="grid max-h-48 grid-cols-2 gap-x-4 overflow-auto font-mono text-xs text-zinc-700 dark:text-zinc-300"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6 grid gap-5 lg:grid-cols-2">
+    <div>
+      <p class="label">{L.range}</p>
+      <div class="grid grid-cols-2 gap-2">
+        <input id="ci-start" class="field font-mono" placeholder={L.start} value="10.0.0.5" spellcheck="false" />
+        <input id="ci-end" class="field font-mono" placeholder={L.end} value="10.0.0.20" spellcheck="false" />
+      </div>
+      <pre id="ci-range" class="code mt-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+    </div>
+    <div>
+      <p class="label">{L.prefixes}</p>
+      <table class="w-full font-mono text-xs">
+        <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {
+            cheat.map((c) => (
+              <tr>
+                <td class="py-1 pr-3 text-zinc-900 dark:text-zinc-100">/{c.p}</td>
+                <td class="py-1 pr-3 text-zinc-600 dark:text-zinc-400">{c.mask}</td>
+                <td class="py-1 text-right text-zinc-600 dark:text-zinc-400">{c.hosts}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { contains, parseCidr, parseIPv4, rangeToCidrs, splitSubnets, subnetInfo, type Cidr } from '../../lib/cidr';
+
+  const root = document.getElementById('ci')!;
+  const L = JSON.parse(root.dataset.l!);
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const input = $<HTMLInputElement>('ci-in');
+  const prefixSel = $<HTMLSelectElement>('ci-prefix');
+  const splitSel = $<HTMLSelectElement>('ci-split');
+  let current: Cidr | null = null;
+
+  function render(fromPrefix = false) {
+    $('ci-err').hidden = true;
+    try {
+      let c = parseCidr(input.value);
+      if (fromPrefix) {
+        c = { ip: c.ip, prefix: Number(prefixSel.value) };
+        input.value = input.value.trim().split(/[\s/]/)[0] + '/' + c.prefix;
+      }
+      current = c;
+      prefixSel.value = String(c.prefix);
+      const i = subnetInfo(c);
+      const v: Record<string, string> = {
+        network: i.network,
+        broadcast: i.broadcast,
+        first: i.firstHost,
+        last: i.lastHost,
+        usable: i.usable.toLocaleString('en-US'),
+        total: i.total.toLocaleString('en-US'),
+        mask: i.mask,
+        wildcard: i.wildcard,
+        cls: i.ipClass,
+        kind: L.kinds[i.kind],
+      };
+      for (const [k, val] of Object.entries(v)) $(`ci-${k}`).textContent = val;
+      $('ci-bin').textContent = `IP    ${i.binaryIp}\nMask  ${i.binaryMask}`;
+      // split options
+      const prev = splitSel.value;
+      splitSel.replaceChildren(
+        ...Array.from({ length: Math.min(32, c.prefix + 8) - c.prefix }, (_, k) => c.prefix + k + 1).map((p) => {
+          const o = document.createElement('option');
+          o.value = o.textContent = `/${p}`;
+          return o;
+        }),
+      );
+      if ([...splitSel.options].some((o) => o.value === prev)) splitSel.value = prev;
+      renderSplit();
+      renderCheck();
+    } catch (e) {
+      current = null;
+      $('ci-err').hidden = false;
+      $('ci-err').textContent = (e as Error).message;
+    }
+  }
+
+  function renderSplit() {
+    if (!current || !splitSel.value) {
+      $('ci-split-out').replaceChildren();
+      $('ci-split-info').textContent = '';
+      return;
+    }
+    const { subnets, count } = splitSubnets(current, Number(splitSel.value.slice(1)), 64);
+    $('ci-split-info').textContent = `${count.toLocaleString('en-US')} ${L.subnets}${count > subnets.length ? ` · ${L.showing} ${subnets.length}` : ''}`;
+    $('ci-split-out').replaceChildren(
+      ...subnets.map((s) => {
+        const li = document.createElement('li');
+        li.textContent = s;
+        return li;
+      }),
+    );
+  }
+
+  function renderCheck() {
+    const out = $('ci-check-out');
+    const v = $<HTMLInputElement>('ci-check').value.trim();
+    if (!v || !current) return (out.textContent = '');
+    try {
+      const inside = contains(current, parseIPv4(v));
+      out.textContent = inside ? `✓ ${L.yes}` : `✗ ${L.no}`;
+      out.className = 'mt-1.5 text-sm ' + (inside ? 'text-brand-700 dark:text-brand-400' : 'text-red-600 dark:text-red-400');
+    } catch (e) {
+      out.textContent = (e as Error).message;
+      out.className = 'mt-1.5 text-sm text-red-600 dark:text-red-400';
+    }
+  }
+
+  function renderRange() {
+    try {
+      $('ci-range').textContent = rangeToCidrs(parseIPv4($<HTMLInputElement>('ci-start').value), parseIPv4($<HTMLInputElement>('ci-end').value)).join('\n');
+    } catch (e) {
+      $('ci-range').textContent = (e as Error).message;
+    }
+  }
+
+  input.addEventListener('input', () => render());
+  prefixSel.addEventListener('change', () => render(true));
+  splitSel.addEventListener('change', renderSplit);
+  $('ci-check').addEventListener('input', renderCheck);
+  $('ci-start').addEventListener('input', renderRange);
+  $('ci-end').addEventListener('input', renderRange);
+  render();
+  renderRange();
+</script>

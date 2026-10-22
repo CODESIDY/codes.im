@@ -1,0 +1,159 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { c2j: 'CSV → JSON', j2c: 'JSON → CSV', header: 'First row is header', infer: 'Detect numbers & booleans', nest: 'a.b → nested', delim: 'Delimiter', auto: 'Auto', tab: 'Tab', open: 'Open file', download: 'Download', preview: 'Preview', rows: 'rows', invalid: 'Invalid JSON' },
+  zh: { c2j: 'CSV → JSON', j2c: 'JSON → CSV', header: '首行是表头', infer: '识别数字和布尔值', nest: 'a.b → 嵌套对象', delim: '分隔符', auto: '自动', tab: 'Tab', open: '打开文件', download: '下载', preview: '预览', rows: '行', invalid: 'JSON 不合法' },
+}[lang];
+const sample = `id,name,email,active,address.city
+1,Ada Lovelace,ada@example.com,true,London
+2,"Hopper, Grace",grace@example.com,false,"New York"
+3,Lin,"lin@example.com",true,上海`;
+---
+
+<div id="cj" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="cj-dir" value="c2j" checked class="sr-only" />{L.c2j}</label>
+    <label class="chip"><input type="radio" name="cj-dir" value="j2c" class="sr-only" />{L.j2c}</label>
+    <span class="mx-2 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+    <span data-only="c2j" class="flex flex-wrap gap-1.5">
+      <label class="chip"><input type="checkbox" id="cj-header" checked class="sr-only" />{L.header}</label>
+      <label class="chip"><input type="checkbox" id="cj-infer" checked class="sr-only" />{L.infer}</label>
+      <label class="chip"><input type="checkbox" id="cj-nest" class="sr-only" />{L.nest}</label>
+    </span>
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.delim}
+      <select id="cj-delim" class="field h-8 w-auto py-0">
+        <option value="auto">{L.auto}</option>
+        <option value=",">,</option>
+        <option value=";">;</option>
+        <option value="&#9;">{L.tab}</option>
+        <option value="|">|</option>
+      </select>
+    </label>
+    <span class="ml-auto flex gap-2">
+      <label class="btn">{L.open}<input type="file" id="cj-file" accept=".csv,.tsv,.txt,.json" class="sr-only" /></label>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="cj-in">{t('common.input')}</label>
+      <textarea id="cj-in" class="field min-h-80 whitespace-pre" wrap="off" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="cj-out">{t('common.output')}</label>
+        <span class="flex gap-2">
+          <button type="button" class="btn px-2 py-0.5 text-xs" data-act="download">{L.download}</button>
+          <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#cj-out">{t('common.copy')}</button>
+        </span>
+      </div>
+      <textarea id="cj-out" class="field min-h-80 whitespace-pre" wrap="off" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="cj-err" class="mt-3 error-box" hidden></p>
+  <div class="mt-4 mb-2 flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.preview}</h3>
+    <span id="cj-count" class="font-mono text-xs text-zinc-500"></span>
+  </div>
+  <div class="max-h-80 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <table id="cj-table" class="w-full text-left text-xs"></table>
+  </div>
+</div>
+
+<script>
+  import { csvToJson, detectDelimiter, jsonToCsv, parseCsv } from '../../lib/csv';
+  import { downloadText } from '../../scripts/download';
+
+  const root = document.getElementById('cj')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('cj-in') as HTMLTextAreaElement;
+  const out = document.getElementById('cj-out') as HTMLTextAreaElement;
+  const delimSel = document.getElementById('cj-delim') as HTMLSelectElement;
+  const err = document.getElementById('cj-err')!;
+  const table = document.getElementById('cj-table') as HTMLTableElement;
+  const count = document.getElementById('cj-count')!;
+  const opt = (id: string) => (document.getElementById(`cj-${id}`) as HTMLInputElement).checked;
+  const dir = () => (root.querySelector('input[name="cj-dir"]:checked') as HTMLInputElement).value;
+
+  function preview(rows: string[][]) {
+    table.replaceChildren();
+    count.textContent = rows.length ? `${Math.max(rows.length - 1, 0)} ${L.rows}` : '';
+    if (!rows.length) return;
+    const head = table.createTHead().insertRow();
+    for (const h of rows[0]) {
+      const th = document.createElement('th');
+      th.className = 'sticky top-0 bg-zinc-50 px-3 py-2 font-medium whitespace-nowrap text-zinc-500 dark:bg-zinc-900';
+      th.textContent = h;
+      head.append(th);
+    }
+    const body = table.createTBody();
+    for (const r of rows.slice(1, 201)) {
+      const tr = body.insertRow();
+      tr.className = 'border-t border-zinc-200 dark:border-zinc-800';
+      for (const v of r) {
+        const td = tr.insertCell();
+        td.className = 'max-w-64 truncate px-3 py-1.5 font-mono text-zinc-700 dark:text-zinc-300';
+        td.textContent = v;
+      }
+    }
+  }
+
+  function run() {
+    err.hidden = true;
+    root.querySelectorAll<HTMLElement>('[data-only]').forEach((el) => (el.hidden = el.dataset.only !== dir()));
+    const src = input.value;
+    if (!src.trim()) {
+      out.value = '';
+      preview([]);
+      return;
+    }
+    const d = delimSel.value === 'auto' ? (dir() === 'c2j' ? detectDelimiter(src) : ',') : delimSel.value;
+    try {
+      if (dir() === 'c2j') {
+        out.value = JSON.stringify(csvToJson(src, { header: opt('header'), inferTypes: opt('infer'), nest: opt('nest'), delimiter: d }), null, 2);
+        preview(parseCsv(src, d));
+      } else {
+        out.value = jsonToCsv(JSON.parse(src), d);
+        preview(parseCsv(out.value, d));
+      }
+    } catch (e) {
+      out.value = '';
+      preview([]);
+      err.hidden = false;
+      err.textContent = dir() === 'j2c' ? `${L.invalid}: ${(e as Error).message}` : (e as Error).message;
+    }
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', (e) => {
+    if ((e.target as HTMLElement).id !== 'cj-file') run();
+  });
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'clear') {
+      input.value = '';
+      run();
+    } else if (act === 'download' && out.value) {
+      if (dir() === 'c2j') downloadText('data.json', out.value, 'application/json');
+      else downloadText('data.csv', out.value, 'text/csv', true);
+    }
+  });
+  (document.getElementById('cj-file') as HTMLInputElement).addEventListener('change', async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    const text = await f.text();
+    const isJson = /^\s*[[{]/.test(text);
+    (root.querySelector(`input[name="cj-dir"][value="${isJson ? 'j2c' : 'c2j'}"]`) as HTMLInputElement).checked = true;
+    input.value = text;
+    (e.target as HTMLInputElement).value = '';
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

@@ -1,0 +1,118 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { schema: 'JSON Schema', data: 'JSON data', valid: 'Valid — the data matches the schema.', invalid: 'errors', badSchema: 'Invalid schema', badData: 'Data is not valid JSON', badSchemaJson: 'Schema is not valid JSON', root: '(root)', draft: 'Draft' },
+  zh: { schema: 'JSON Schema', data: 'JSON 数据', valid: '校验通过 —— 数据符合 schema。', invalid: '个错误', badSchema: 'Schema 无效', badData: '数据不是合法的 JSON', badSchemaJson: 'Schema 不是合法的 JSON', root: '（根）', draft: '版本' },
+}[lang];
+const schema = JSON.stringify(
+  {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1 },
+      priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+      due: { type: 'string', format: 'date' },
+      assignee: { type: 'object', properties: { email: { type: 'string', format: 'email' } }, required: ['email'] },
+    },
+    required: ['title', 'priority'],
+    additionalProperties: false,
+  },
+  null,
+  2,
+);
+const data = JSON.stringify({ title: 'Ship v2', priority: 'urgent', due: '2026-13-01', assignee: { email: 'ada@' }, notes: 'extra' }, null, 2);
+---
+
+<div id="sv" data-l={JSON.stringify(L)} data-schema={schema} data-data={data}>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="sv-schema">{L.schema}</label>
+      <textarea id="sv-schema" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex h-[22px] items-center justify-between">
+        <label class="label mb-0" for="sv-data">{L.data}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+      </div>
+      <textarea id="sv-data" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+  </div>
+  <div id="sv-result" class="mt-4"></div>
+</div>
+
+<script>
+  import { parseJson } from '../../lib/json';
+  import { repairJson } from '../../lib/json-repair';
+  import { validateWithSchema } from '../../lib/schema-validate';
+
+  const root = document.getElementById('sv')!;
+  const L = JSON.parse(root.dataset.l!);
+  const schemaEl = document.getElementById('sv-schema') as HTMLTextAreaElement;
+  const dataEl = document.getElementById('sv-data') as HTMLTextAreaElement;
+  const out = document.getElementById('sv-result')!;
+
+  function box(cls: string, text: string) {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    return p;
+  }
+
+  function run() {
+    if (!schemaEl.value.trim() || !dataEl.value.trim()) return out.replaceChildren();
+    const s = parseJson(schemaEl.value);
+    if (!s.ok) return out.replaceChildren(box('error-box', `${L.badSchemaJson}: ${s.error.message}`));
+    // Model output often arrives wrapped in a code fence: repair before validating.
+    let d = parseJson(dataEl.value);
+    if (!d.ok) {
+      const r = repairJson(dataEl.value);
+      if (r.fixes.length && r.value !== null) d = { ok: true, value: r.value };
+      else return out.replaceChildren(box('error-box', `${L.badData}: ${d.error.message}`));
+    }
+    let res;
+    try {
+      res = validateWithSchema(s.value as Record<string, unknown>, d.value);
+    } catch (e) {
+      return out.replaceChildren(box('error-box', `${L.badSchema}: ${(e as Error).message}`));
+    }
+    if (res.valid) return out.replaceChildren(box('ok-box', `✓ ${L.valid} · ${L.draft} ${res.draft}`));
+    const head = box('mb-2 text-sm font-medium text-red-600 dark:text-red-400', `✕ ${res.issues.length} ${L.invalid} · ${L.draft} ${res.draft}`);
+    const list = document.createElement('ul');
+    list.className = 'divide-y divide-zinc-200 rounded-lg border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800';
+    for (const i of res.issues) {
+      const li = document.createElement('li');
+      li.className = 'flex flex-wrap gap-x-4 gap-y-1 px-3 py-2';
+      const path = document.createElement('code');
+      path.className = 'font-mono text-xs text-red-600 dark:text-red-400';
+      path.textContent = i.path || L.root;
+      const msg = document.createElement('span');
+      msg.className = 'text-zinc-700 dark:text-zinc-300';
+      msg.textContent = i.message;
+      const kw = document.createElement('span');
+      kw.className = 'ml-auto font-mono text-xs text-zinc-400';
+      kw.textContent = i.keyword;
+      li.append(path, msg, kw);
+      list.append(li);
+    }
+    out.replaceChildren(head, list);
+  }
+
+  let timer = 0;
+  root.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 150);
+  });
+  root.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('[data-act="clear"]')) {
+      dataEl.value = '';
+      run();
+    }
+  });
+  schemaEl.value = root.dataset.schema!;
+  dataEl.value = root.dataset.data!;
+  run();
+</script>

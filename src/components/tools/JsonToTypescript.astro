@@ -1,0 +1,98 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { root: 'Root type name', style: 'Declaration', exported: 'export', invalid: 'Invalid JSON' },
+  zh: { root: '根类型名', style: '声明方式', exported: 'export', invalid: 'JSON 不合法' },
+}[lang];
+const sample = JSON.stringify(
+  {
+    id: 42,
+    username: 'octocat',
+    isAdmin: false,
+    profile: { bio: null, website: 'https://codes.im' },
+    posts: [
+      { id: 1, title: 'Hello', tags: ['intro'] },
+      { id: 2, title: 'Second', tags: [], draft: true },
+    ],
+  },
+  null,
+  2,
+);
+---
+
+<div id="jt" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.root}
+      <input id="jt-name" class="field h-8 w-36 py-0" value="Root" />
+    </label>
+    <span class="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.style}
+      <label class="chip"><input type="radio" name="jt-style" value="interface" checked class="sr-only" />interface</label>
+      <label class="chip"><input type="radio" name="jt-style" value="type" class="sr-only" />type</label>
+    </span>
+    <label class="chip"><input type="checkbox" id="jt-export" checked class="sr-only" />{L.exported}</label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="jt-in">JSON</label>
+      <textarea id="jt-in" class="field min-h-96" spellcheck="false" placeholder='{"id": 1, "name": "codes.im"}'></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="jt-out">TypeScript</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#jt-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="jt-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <div id="jt-err" class="mt-3 error-box" hidden></div>
+</div>
+
+<script>
+  import { parseJson } from '../../lib/json';
+  import { jsonToTs } from '../../lib/json-to-ts';
+
+  const root = document.getElementById('jt')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('jt-in') as HTMLTextAreaElement;
+  const output = document.getElementById('jt-out') as HTMLTextAreaElement;
+  const name = document.getElementById('jt-name') as HTMLInputElement;
+  const exp = document.getElementById('jt-export') as HTMLInputElement;
+  const err = document.getElementById('jt-err')!;
+
+  function run() {
+    err.hidden = true;
+    if (!input.value.trim()) {
+      output.value = '';
+      return;
+    }
+    const r = parseJson(input.value);
+    if (!r.ok) {
+      err.hidden = false;
+      err.textContent = `${L.invalid}: ${r.error.message}`;
+      return;
+    }
+    const style = (root.querySelector('input[name="jt-style"]:checked') as HTMLInputElement).value as 'interface' | 'type';
+    output.value = jsonToTs(r.value, { rootName: name.value.trim() || 'Root', style, exported: exp.checked });
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+</script>

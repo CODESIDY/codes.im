@@ -1,0 +1,126 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { auto: 'Auto', indent: 'Indent', detected: 'Detected', invalid: 'Parse error' },
+  zh: { auto: '自动', indent: '缩进', detected: '识别为', invalid: '解析错误' },
+}[lang];
+const sample = `# docker-compose.yml
+services:
+  web:
+    image: nginx:1.27
+    ports:
+      - "8080:80"
+    environment: &env
+      TZ: Asia/Shanghai
+      DEBUG: false
+  worker:
+    build: ./worker
+    environment: *env
+    command: >
+      python worker.py
+      --concurrency 4
+`;
+---
+
+<div id="yj" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="yj-dir" value="auto" checked class="sr-only" />{L.auto}</label>
+    <label class="chip"><input type="radio" name="yj-dir" value="y2j" class="sr-only" />YAML → JSON</label>
+    <label class="chip"><input type="radio" name="yj-dir" value="j2y" class="sr-only" />JSON → YAML</label>
+    <label class="ml-3 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.indent}
+      <select id="yj-indent" class="field h-8 w-auto py-0">
+        <option value="2">2</option>
+        <option value="4">4</option>
+      </select>
+    </label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="swap">⇄ {t('common.swap')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="yj-in">{t('common.input')} <span id="yj-detected" class="ml-2 font-mono normal-case"></span></label>
+      <textarea id="yj-in" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="yj-out">{t('common.output')}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#yj-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="yj-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="yj-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { parseAllDocuments, stringify } from 'yaml';
+
+  const root = document.getElementById('yj')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('yj-in') as HTMLTextAreaElement;
+  const out = document.getElementById('yj-out') as HTMLTextAreaElement;
+  const indent = document.getElementById('yj-indent') as HTMLSelectElement;
+  const err = document.getElementById('yj-err')!;
+  const detected = document.getElementById('yj-detected')!;
+  const dir = () => (root.querySelector('input[name="yj-dir"]:checked') as HTMLInputElement).value;
+
+  function looksJson(s: string) {
+    const t = s.trim();
+    if (!/^[[{]/.test(t)) return false;
+    try {
+      JSON.parse(t);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function run() {
+    err.hidden = true;
+    const src = input.value;
+    if (!src.trim()) {
+      out.value = detected.textContent = '';
+      return;
+    }
+    const d = dir() === 'auto' ? (looksJson(src) ? 'j2y' : 'y2j') : dir();
+    detected.textContent = dir() === 'auto' ? `· ${L.detected} ${d === 'j2y' ? 'JSON' : 'YAML'}` : '';
+    const n = Number(indent.value);
+    try {
+      if (d === 'j2y') {
+        out.value = stringify(JSON.parse(src), { indent: n, lineWidth: 0 });
+      } else {
+        const docs = parseAllDocuments(src);
+        const bad = docs.find((x) => 'errors' in x && x.errors.length);
+        if (bad && 'errors' in bad) throw bad.errors[0];
+        const values = docs.map((x) => x.toJS({ maxAliasCount: 1000 }));
+        out.value = JSON.stringify(values.length === 1 ? values[0] : values, null, n);
+      }
+    } catch (e) {
+      out.value = '';
+      err.hidden = false;
+      err.textContent = `${L.invalid}: ${(e as Error).message.split('\n')[0]}`;
+    }
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'swap') {
+      input.value = out.value;
+      (root.querySelector('input[name="yj-dir"][value="auto"]') as HTMLInputElement).checked = true;
+    } else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

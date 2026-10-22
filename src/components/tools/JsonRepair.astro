@@ -1,0 +1,139 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    input: 'Broken JSON / model output',
+    minify: 'Minify',
+    fixed: 'Fixed',
+    valid: 'Already valid JSON — nothing to fix.',
+    fixes: {
+      fence: 'Removed markdown code fence',
+      prose: 'Removed text around the JSON',
+      comment: 'Removed comments',
+      quotes: 'Fixed quotes',
+      'unquoted-key': 'Quoted object keys',
+      'trailing-comma': 'Removed trailing commas',
+      'missing-comma': 'Added missing commas',
+      literal: 'Converted True / None / undefined / NaN',
+      'control-char': 'Escaped line breaks inside strings',
+      truncated: 'Closed truncated JSON',
+      number: 'Normalised numbers',
+      'missing-value': 'Filled missing values with null',
+    },
+  },
+  zh: {
+    input: '有问题的 JSON / 模型输出',
+    minify: '压缩',
+    fixed: '已修复',
+    valid: 'JSON 本身就是合法的，无需修复。',
+    fixes: {
+      fence: '去掉了 Markdown 代码块',
+      prose: '去掉了 JSON 前后的文字',
+      comment: '去掉了注释',
+      quotes: '修正了引号',
+      'unquoted-key': '给键名加上了引号',
+      'trailing-comma': '删除了末尾多余的逗号',
+      'missing-comma': '补上了缺少的逗号',
+      literal: '转换了 True / None / undefined / NaN',
+      'control-char': '转义了字符串中的换行',
+      truncated: '补全了被截断的 JSON',
+      number: '规范化了数字',
+      'missing-value': '缺失的值填为 null',
+    },
+  },
+}[lang];
+const sample = `Sure! Here is the extracted data:
+
+\`\`\`json
+{
+  name: 'Ada Lovelace',   // from the bio
+  "born": 1815,
+  "languages": ["English", "French",],
+  "is_mathematician": True,
+  "spouse": None,
+  "summary": "Wrote the first published algorithm
+for Babbage's Analytical Engine",
+  "works": [
+    {"title": "Notes", "year": 1843
+\`\`\``;
+---
+
+<div id="jr" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-2">
+    <label class="chip"><input type="checkbox" id="jr-min" class="sr-only" />{L.minify}</label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="jr-in">{L.input}</label>
+      <textarea id="jr-in" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="jr-out">JSON</label>
+        <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#jr-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="jr-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <div id="jr-fixes" class="mt-3"></div>
+</div>
+
+<script>
+  import { repairJson } from '../../lib/json-repair';
+
+  const root = document.getElementById('jr')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('jr-in') as HTMLTextAreaElement;
+  const out = document.getElementById('jr-out') as HTMLTextAreaElement;
+  const min = document.getElementById('jr-min') as HTMLInputElement;
+  const fixesEl = document.getElementById('jr-fixes')!;
+
+  function run() {
+    if (!input.value.trim()) {
+      out.value = '';
+      fixesEl.replaceChildren();
+      return;
+    }
+    const r = repairJson(input.value);
+    out.value = min.checked ? JSON.stringify(r.value) : r.json;
+    if (!r.fixes.length) {
+      fixesEl.className = 'mt-3 ok-box';
+      fixesEl.textContent = '✓ ' + L.valid;
+      return;
+    }
+    fixesEl.className = 'mt-3 flex flex-wrap items-center gap-1.5';
+    const head = document.createElement('span');
+    head.className = 'mr-1 text-xs font-medium text-zinc-500 uppercase';
+    head.textContent = `${L.fixed} (${r.fixes.length})`;
+    fixesEl.replaceChildren(
+      head,
+      ...r.fixes.map((f) => {
+        const s = document.createElement('span');
+        s.className = 'rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300';
+        s.textContent = L.fixes[f] ?? f;
+        return s;
+      }),
+    );
+  }
+
+  input.addEventListener('input', run);
+  min.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

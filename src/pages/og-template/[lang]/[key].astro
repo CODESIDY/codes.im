@@ -1,0 +1,244 @@
+---
+// HTML templates that scripts/og.mjs screenshots into public/og/{lang}/{key}.jpg.
+// Only built when OG=1, so they never ship with the site.
+import { getCollection } from 'astro:content';
+import { langs, useTranslations, type Lang } from '../../../i18n/ui';
+import { categories, tools } from '../../../tools/registry';
+import { categoryPages } from '../../../data/tool-categories';
+import { presets, BASE_NAME, BASE_SHORT, CASE_NAME } from '../../../data/presets';
+import { httpStatuses, statusClass } from '../../../data/http-status';
+import { getCategory } from '../../../data/categories';
+import { splitId } from '../../../lib/posts';
+import { plain } from '../../../lib/inline';
+
+interface Card {
+  key: string;
+  title: string;
+  desc: string;
+  badge: string;
+  glyph?: string;
+  /** Large coloured number instead of a glyph (HTTP status). */
+  big?: { text: string; color: string };
+}
+
+export async function getStaticPaths() {
+  if (process.env.OG !== '1') return [];
+  const posts = await getCollection('posts', (p) => !p.data.draft && !p.data.cover);
+  const out: { params: { lang: Lang; key: string }; props: { card: Card } }[] = [];
+  for (const lang of langs) {
+    const t = useTranslations(lang);
+    const zh = lang === 'zh';
+    const add = (card: Card) => out.push({ params: { lang, key: card.key }, props: { card } });
+    add({ key: 'index', title: t('home.hero.title'), desc: t('home.hero.subtitle'), badge: `${tools.length} ${zh ? '个工具' : 'tools'}`, glyph: '>_' });
+    add({ key: 'blog', title: t('blog.title'), desc: t('blog.description'), badge: zh ? '博客' : 'Blog', glyph: '✎' });
+    add({ key: 'about', title: zh ? '关于 codes.im' : 'About codes.im', desc: t('site.description'), badge: zh ? '关于' : 'About', glyph: '>_' });
+    add({ key: 'projects', title: t('projects.title'), desc: t('projects.description'), badge: zh ? '开源' : 'Open source', glyph: '</>' });
+    for (const tool of tools) {
+      const tx = tool.text[lang];
+      add({ key: tool.slug, title: tx.name, desc: tx.description, badge: t(`cat.${tool.category}`), glyph: tool.glyph });
+    }
+    for (const c of categories) {
+      const page = categoryPages[c][lang];
+      add({ key: `tools--${c}`, title: page.title, desc: page.description, badge: t(`cat.${c}`), glyph: tools.find((x) => x.category === c)?.glyph });
+    }
+    for (const p of presets) {
+      const tool = tools.find((x) => x.slug === p.tool)!;
+      const title =
+        p.kind === 'cron'
+          ? zh
+            ? `Cron ${p.label.zh}执行一次`
+            : `Cron ${p.label.en}`
+          : p.kind === 'base'
+            ? zh
+              ? `${BASE_NAME[p.from].zh}转${BASE_NAME[p.to].zh}`
+              : `${BASE_SHORT[p.from].en} to ${BASE_SHORT[p.to].en}`
+            : `${CASE_NAME[p.from]} → ${CASE_NAME[p.to]}`;
+      add({ key: `${p.tool}--${p.slug}`, title, desc: p.kind === 'cron' ? p.expr : tool.text[lang].description, badge: tool.text[lang].name, glyph: tool.glyph, big: p.kind === 'cron' ? { text: p.expr, color: '#34d399' } : undefined });
+    }
+    add({ key: 'http-status', title: zh ? 'HTTP 状态码大全' : 'HTTP Status Codes', desc: zh ? '含义、常见原因与解决方法' : 'Meanings, causes and fixes', badge: zh ? '开发者速查' : 'Reference', big: { text: '404', color: '#fbbf24' } });
+    for (const s of httpStatuses) {
+      const cls = Math.floor(s.code / 100);
+      const color = cls === 2 ? '#34d399' : cls === 3 ? '#38bdf8' : cls === 4 ? '#fbbf24' : cls === 5 ? '#f87171' : '#a1a1aa';
+      add({ key: `http-status--${s.code}`, title: s.name, desc: plain(s.text[lang].summary), badge: statusClass[cls][lang].name, big: { text: String(s.code), color } });
+    }
+    for (const p of posts) {
+      const id = splitId(p.id);
+      if (id.lang !== lang) continue;
+      const cat = getCategory(p.data.category);
+      add({ key: `blog--${id.slug}`, title: p.data.title, desc: p.data.description, badge: cat ? cat[lang] : 'Blog', glyph: '✎' });
+    }
+  }
+  return out;
+}
+
+const { card } = Astro.props as { card: Card };
+const lang = Astro.params.lang as Lang;
+const tagline = useTranslations(lang)('site.tagline');
+const titleSize = card.title.length > 34 ? 56 : card.title.length > 22 ? 64 : 72;
+---
+
+<!doctype html>
+<html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+      }
+      body {
+        font-family: Inter, 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background: #09090b;
+        color: #fafafa;
+        position: relative;
+        padding: 64px 72px;
+        display: flex;
+        flex-direction: column;
+      }
+      .glow {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(600px 380px at 92% 0%, rgba(16, 185, 129, 0.28), transparent 70%),
+          radial-gradient(500px 300px at 0% 100%, rgba(16, 185, 129, 0.12), transparent 70%);
+      }
+      .mono {
+        font-family: 'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace;
+      }
+      header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 30px;
+        font-weight: 700;
+      }
+      .logo i {
+        font-style: normal;
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: #fafafa;
+        color: #047857;
+        font-size: 20px;
+      }
+      .logo b {
+        color: #34d399;
+      }
+      .badge {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        padding: 8px 20px;
+        font-size: 22px;
+        color: #d4d4d8;
+        max-width: 520px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      main {
+        position: relative;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 48px;
+      }
+      .glyph {
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        min-width: 180px;
+        height: 180px;
+        padding: 0 28px;
+        border-radius: 36px;
+        background: rgba(16, 185, 129, 0.14);
+        border: 2px solid rgba(52, 211, 153, 0.35);
+        color: #34d399;
+        font-size: 64px;
+        font-weight: 700;
+      }
+      .big {
+        flex-shrink: 0;
+        font-size: 150px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .big.small {
+        font-size: 72px;
+        letter-spacing: 0.08em;
+      }
+      .text {
+        min-width: 0;
+      }
+      h1 {
+        font-weight: 800;
+        line-height: 1.12;
+        letter-spacing: -0.02em;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      p.desc {
+        margin-top: 20px;
+        font-size: 27px;
+        line-height: 1.45;
+        color: #a1a1aa;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      footer {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 22px;
+        color: #71717a;
+      }
+      footer span:last-child {
+        color: #34d399;
+      }
+      .stacked main {
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 28px;
+      }
+    </style>
+  </head>
+  <body class={card.big && card.big.text.length > 4 ? 'stacked' : ''}>
+    <div class="glow"></div>
+    <header>
+      <div class="logo mono"><i>&gt;_</i><span>codes<b>.im</b></span></div>
+      <div class="badge">{card.badge}</div>
+    </header>
+    <main>
+      {card.big ? <div class:list={['big mono', card.big.text.length > 4 && 'small']} style={`color:${card.big.color}`}>{card.big.text}</div> : card.glyph && <div class="glyph mono">{card.glyph}</div>}
+      <div class="text">
+        <h1 style={`font-size:${titleSize}px`}>{card.title}</h1>
+        {card.desc && card.desc !== card.big?.text && <p class="desc">{card.desc}</p>}
+      </div>
+    </main>
+    <footer>
+      <span>{tagline}</span>
+      <span class="mono">codes.im</span>
+    </footer>
+  </body>
+</html>

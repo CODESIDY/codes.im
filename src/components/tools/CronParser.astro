@@ -1,0 +1,102 @@
+---
+import { type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = {
+  en: { expr: 'Cron expression', next: 'Next runs (your local time)', fields: ['minute', 'hour', 'day (month)', 'month', 'day (week)'], presets: 'Presets', tz: 'Time zone' },
+  zh: { expr: 'Cron 表达式', next: '接下来的执行时间（本地时间）', fields: ['分', '时', '日', '月', '周'], presets: '预设', tz: '时区' },
+}[lang];
+const presets: [string, string, string][] = [
+  ['*/5 * * * *', 'Every 5 minutes', '每 5 分钟'],
+  ['0 * * * *', 'Hourly', '每小时'],
+  ['0 9 * * 1-5', 'Weekdays 9:00', '工作日 9:00'],
+  ['0 0 * * *', 'Daily at midnight', '每天 0 点'],
+  ['30 2 * * 0', 'Sundays 2:30', '每周日 2:30'],
+  ['0 0 1 * *', '1st of month', '每月 1 号'],
+  ['0 */6 * * *', 'Every 6 hours', '每 6 小时'],
+];
+---
+
+<div id="cron" data-l={JSON.stringify(L)}>
+  <label class="label" for="cron-in">{L.expr}</label>
+  <input id="cron-in" class="field py-3 text-center font-mono text-2xl tracking-widest" value="*/15 9-18 * * 1-5" spellcheck="false" autocomplete="off" />
+  <div class="mt-1 grid grid-cols-5 text-center font-mono text-[11px] text-zinc-400">
+    {L.fields.map((f) => <span>{f}</span>)}
+  </div>
+
+  <p id="cron-desc" class="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-lg font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-400"></p>
+  <p id="cron-err" class="mt-4 error-box" hidden></p>
+
+  <div class="mt-4 flex flex-wrap items-center gap-1.5">
+    <span class="mr-1 text-xs text-zinc-500">{L.presets}</span>
+    {
+      presets.map(([e, en, zh]) => (
+        <button type="button" class="btn px-2 py-1 text-xs" data-cron={e}>
+          {lang === 'zh' ? zh : en}
+        </button>
+      ))
+    }
+  </div>
+
+  <h3 class="mt-6 mb-2 flex items-baseline justify-between text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+    {L.next}
+    <span id="cron-tz" class="font-mono text-xs font-normal text-zinc-500"></span>
+  </h3>
+  <ol id="cron-next" class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 font-mono text-sm dark:divide-zinc-800 dark:border-zinc-800"></ol>
+</div>
+
+<script>
+  import cronstrue from 'cronstrue';
+  import 'cronstrue/locales/zh_CN';
+  import { nextRuns, normalizeCron } from '../../lib/cron';
+  import { relativeTime } from '../../lib/time';
+
+  const input = document.getElementById('cron-in') as HTMLInputElement;
+  const desc = document.getElementById('cron-desc')!;
+  const err = document.getElementById('cron-err')!;
+  const list = document.getElementById('cron-next')!;
+  const locale = document.documentElement.lang;
+  const zh = locale.startsWith('zh');
+  document.getElementById('cron-tz')!.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+
+  function run() {
+    try {
+      const runs = nextRuns(input.value, 10);
+      desc.textContent = cronstrue.toString(normalizeCron(input.value), { locale: zh ? 'zh_CN' : 'en', use24HourTimeFormat: true, verbose: true });
+      err.hidden = true;
+      desc.hidden = false;
+      const now = Date.now();
+      list.replaceChildren(
+        ...runs.map((d, i) => {
+          const li = document.createElement('li');
+          li.className = 'flex justify-between gap-4 px-3 py-2';
+          const a = document.createElement('span');
+          a.innerHTML = `<span class="mr-3 text-zinc-400">${String(i + 1).padStart(2, ' ')}</span>`;
+          a.append(fmt.format(d));
+          const b = document.createElement('span');
+          b.className = 'text-xs text-zinc-500';
+          b.textContent = relativeTime(d.getTime(), now, locale);
+          li.append(a, b);
+          return li;
+        }),
+      );
+    } catch (e) {
+      err.hidden = false;
+      desc.hidden = true;
+      err.textContent = (e as Error).message;
+      list.replaceChildren();
+    }
+  }
+
+  input.addEventListener('input', run);
+  document.getElementById('cron')!.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-cron]');
+    if (!b) return;
+    input.value = b.dataset.cron!;
+    run();
+  });
+  run();
+</script>

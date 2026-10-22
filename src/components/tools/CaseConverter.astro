@@ -1,0 +1,44 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+import { caseStyles } from '../../lib/case';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const names = {
+  en: { camel: 'camelCase', pascal: 'PascalCase', snake: 'snake_case', constant: 'CONSTANT_CASE', kebab: 'kebab-case', train: 'Train-Case', dot: 'dot.case', path: 'path/case', title: 'Title Case', sentence: 'Sentence case', lower: 'lowercase', upper: 'UPPERCASE' },
+  zh: { camel: 'camelCase 小驼峰', pascal: 'PascalCase 大驼峰', snake: 'snake_case 下划线', constant: 'CONSTANT_CASE 常量', kebab: 'kebab-case 短横线', train: 'Train-Case', dot: 'dot.case 点分隔', path: 'path/case 路径', title: 'Title Case 标题', sentence: 'Sentence case 句首大写', lower: 'lowercase 全小写', upper: 'UPPERCASE 全大写' },
+}[lang];
+const ph = lang === 'zh' ? '输入变量名、字段名或一行一个，如 userFirstName、XMLHttpRequest、order_item_id' : 'Type identifiers, one per line — e.g. userFirstName, XMLHttpRequest, order_item_id';
+---
+
+<div id="cc">
+  <label class="label" for="cc-in">{t('common.input')}</label>
+  <textarea id="cc-in" class="field min-h-28!" spellcheck="false" placeholder={ph}>userFirstName</textarea>
+  <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    {
+      caseStyles.map((s) => (
+        <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <span class="text-xs text-zinc-500">{names[s]}</span>
+            <button type="button" class="btn px-2 py-0.5 text-xs" data-copy={`#cc-${s}`}>
+              {t('common.copy')}
+            </button>
+          </div>
+          <pre id={`cc-${s}`} data-style={s} class="overflow-x-auto font-mono text-[13px] whitespace-pre text-zinc-900 dark:text-zinc-100" />
+        </div>
+      ))
+    }
+  </div>
+</div>
+
+<script>
+  import { convertLines, type CaseStyle } from '../../lib/case';
+
+  const input = document.getElementById('cc-in') as HTMLTextAreaElement;
+  const outs = [...document.querySelectorAll<HTMLElement>('#cc pre[data-style]')];
+  const run = () => outs.forEach((o) => (o.textContent = convertLines(input.value, o.dataset.style as CaseStyle)));
+  input.addEventListener('input', run);
+  run();
+</script>

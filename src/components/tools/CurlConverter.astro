@@ -1,0 +1,75 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const sample = `curl https://api.openai.com/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer $OPENAI_API_KEY" \\
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Say hello"}],
+    "stream": false
+  }'`;
+---
+
+<div id="curl" data-sample={sample}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="curl-in">curl</label>
+    <span class="flex gap-2">
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="curl-in" class="field min-h-40" spellcheck="false" placeholder="curl https://api.example.com -H 'Accept: application/json'"></textarea>
+  <p id="curl-err" class="mt-2 error-box" hidden></p>
+
+  <div class="mt-4 mb-2 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="curl-lang" value="fetch" checked class="sr-only" />JavaScript fetch</label>
+    <label class="chip"><input type="radio" name="curl-lang" value="python" class="sr-only" />Python requests</label>
+    <label class="chip"><input type="radio" name="curl-lang" value="go" class="sr-only" />Go net/http</label>
+  </div>
+  <div class="relative">
+    <pre id="curl-out" class="code min-h-48 overflow-auto rounded-lg bg-zinc-900 p-4 pt-10 text-zinc-100 dark:bg-black"></pre>
+    <button type="button" class="btn absolute top-2 right-2 px-2 py-0.5 text-xs" data-copy="#curl-out">{t('common.copy')}</button>
+  </div>
+</div>
+
+<script>
+  import { parseCurl, toFetch, toGo, toPython } from '../../lib/curl';
+
+  const root = document.getElementById('curl')!;
+  const input = document.getElementById('curl-in') as HTMLTextAreaElement;
+  const out = document.getElementById('curl-out')!;
+  const err = document.getElementById('curl-err')!;
+  const gens = { fetch: toFetch, python: toPython, go: toGo };
+
+  function run() {
+    err.hidden = true;
+    if (!input.value.trim()) {
+      out.textContent = '';
+      return;
+    }
+    try {
+      const req = parseCurl(input.value);
+      const lang = (root.querySelector('input[name="curl-lang"]:checked') as HTMLInputElement).value as keyof typeof gens;
+      out.textContent = gens[lang](req);
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  }
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

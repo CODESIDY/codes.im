@@ -1,0 +1,59 @@
+---
+import { config, isSet, issueUrl } from '../config';
+import { useTranslations, type Lang } from '../i18n/ui';
+import { categories, tools } from '../tools/registry';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const request = issueUrl(lang === 'zh' ? '[工具建议] ' : '[Tool request] ');
+const sponsor = Object.values(config.sponsor).find(isSet);
+---
+
+<footer class="print:hidden mt-16 border-t border-zinc-200 dark:border-zinc-800">
+  <div class="mx-auto grid max-w-6xl gap-8 px-4 py-10 text-sm sm:grid-cols-3 lg:grid-cols-[1.4fr_repeat(7,1fr)] sm:px-6">
+    <div>
+      <a href={`/${lang}/`} class="font-mono font-semibold">codes<span class="text-brand-600 dark:text-brand-400">.im</span></a>
+      <p class="mt-2 max-w-xs text-zinc-500 dark:text-zinc-400">{t('site.tagline')}</p>
+      <p class="mt-4 text-xs text-zinc-400 dark:text-zinc-500">{t('footer.privacy')}</p>
+    </div>
+    {
+      categories.map((c) => (
+        <div>
+          <p class="mb-2 font-medium text-zinc-900 dark:text-zinc-100">{t(`cat.${c}`)}</p>
+          <ul class="space-y-1.5">
+            {tools
+              .filter((tool) => tool.category === c)
+              .map((tool) => (
+                <li>
+                  <a
+                    href={`/${lang}/${tool.slug}/`}
+                    class="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  >
+                    {tool.text[lang].name}
+                  </a>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+  <div class="border-t border-zinc-200 dark:border-zinc-800">
+    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-zinc-400 sm:px-6 dark:text-zinc-500">
+      <span>© {new Date().getFullYear()} codes.im · {t('footer.made')}</span>
+      <span class="flex flex-wrap gap-x-4 gap-y-1">
+        <a href={`/${lang}/blog/`} class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('nav.blog')}</a>
+        <a href={`/${lang}/projects/`} class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('nav.projects')}</a>
+        <a href={`/${lang}/http-status/`} class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('nav.reference')}</a>
+        <a href={`/${lang}/rss.xml`} class="hover:text-zinc-700 dark:hover:text-zinc-300">RSS</a>
+        <a href={`/${lang}/about/`} class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('nav.about')}</a>
+        <a href={config.repo} target="_blank" rel="noopener" class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('nav.github')}</a>
+        {request && <a href={request} target="_blank" rel="noopener" class="hover:text-zinc-700 dark:hover:text-zinc-300">{t('footer.request')}</a>}
+        {sponsor && <a href={`/${lang}/about/#support`} class="text-brand-700 hover:text-brand-600 dark:text-brand-400">♥ {t('footer.sponsor')}</a>}
+      </span>
+    </div>
+  </div>
+</footer>

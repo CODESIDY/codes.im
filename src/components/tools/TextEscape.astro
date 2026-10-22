@@ -1,0 +1,128 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { html: 'HTML entities', unicode: 'Unicode escape', json: 'JSON string', encode: 'Encode', decode: 'Decode', nonAscii: 'Also encode non-ASCII', onlyNonAscii: 'Only non-ASCII', style: 'Style', inspect: 'Character inspector', invisible: 'invisible / special characters found', clean: 'Remove invisible characters' },
+  zh: { html: 'HTML 实体', unicode: 'Unicode 转义', json: 'JSON 字符串', encode: '编码', decode: '解码', nonAscii: '同时编码非 ASCII 字符', onlyNonAscii: '仅转义非 ASCII', style: '格式', inspect: '字符检查', invisible: '个不可见 / 特殊字符', clean: '移除不可见字符' },
+}[lang];
+const sample = lang === 'zh' ? '<p class="note">你好，世界 😀 & “引号”</p>' : '<p class="note">Hello, 世界 😀 & “quotes”</p>';
+---
+
+<div id="te" data-l={JSON.stringify(L)}>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="te-mode" value="html" checked class="sr-only" />{L.html}</label>
+    <label class="chip"><input type="radio" name="te-mode" value="unicode" class="sr-only" />{L.unicode}</label>
+    <label class="chip"><input type="radio" name="te-mode" value="json" class="sr-only" />{L.json}</label>
+    <span class="mx-2 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+    <label class="chip"><input type="radio" name="te-dir" value="encode" checked class="sr-only" />{L.encode}</label>
+    <label class="chip"><input type="radio" name="te-dir" value="decode" class="sr-only" />{L.decode}</label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="swap">⇅ {t('common.swap')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <label class="chip" data-for="html"><input type="checkbox" id="te-nonascii" class="sr-only" />{L.nonAscii}</label>
+    <span data-for="unicode" class="flex flex-wrap items-center gap-1.5" hidden>
+      <span class="mr-1 text-xs text-zinc-500">{L.style}</span>
+      {[['js', '\\uXXXX'], ['es6', '\\u{X}'], ['python', 'Python'], ['css', 'CSS'], ['html', '&#xX;']].map(([v, n], i) => <label class="chip font-mono"><input type="radio" name="te-style" value={v} checked={i === 0} class="sr-only" />{n}</label>)}
+      <label class="chip"><input type="checkbox" id="te-only" checked class="sr-only" />{L.onlyNonAscii}</label>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="te-in">{t('common.input')}</label>
+      <textarea id="te-in" class="field min-h-56" spellcheck="false">{sample}</textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="te-out">{t('common.output')}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#te-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="te-out" class="field min-h-56" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="te-err" class="mt-3 error-box" hidden></p>
+
+  <div class="mt-6 mb-2 flex flex-wrap items-center justify-between gap-2">
+    <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.inspect}</h3>
+    <span class="flex items-center gap-3">
+      <span id="te-inv" class="text-xs text-amber-700 dark:text-amber-400"></span>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clean" id="te-clean" hidden>{L.clean}</button>
+    </span>
+  </div>
+  <div id="te-chars" class="flex max-h-60 flex-wrap gap-1 overflow-auto"></div>
+</div>
+
+<script>
+  import { codePoints, htmlDecode, htmlEncode, jsonEscape, jsonUnescape, unicodeEscape, unicodeUnescape, type UnicodeStyle } from '../../lib/escape';
+
+  const root = document.getElementById('te')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('te-in') as HTMLTextAreaElement;
+  const out = document.getElementById('te-out') as HTMLTextAreaElement;
+  const err = document.getElementById('te-err')!;
+  const radio = (n: string) => (root.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement).value;
+  const INVISIBLE = /[\u00a0\u00ad\u200b-\u200f\u2028\u2029\u2060\ufeff\u3000]/g;
+
+  function inspect() {
+    const cps = codePoints(input.value, 400);
+    const box = document.getElementById('te-chars')!;
+    box.replaceChildren(
+      ...cps.map((c) => {
+        const el = document.createElement('span');
+        const special = !!c.name && c.name !== 'SPACE' && c.name !== 'LINE FEED';
+        el.className = `inline-flex flex-col items-center rounded border px-1.5 py-0.5 ${special ? 'border-amber-400 bg-amber-50 dark:bg-amber-500/10' : 'border-zinc-200 dark:border-zinc-800'}`;
+        el.title = c.name || c.cp;
+        const ch = document.createElement('span');
+        ch.className = 'text-sm leading-5';
+        ch.textContent = c.name ? '·' : c.ch;
+        const cp = document.createElement('span');
+        cp.className = 'font-mono text-[9px] text-zinc-400';
+        cp.textContent = c.cp;
+        el.append(ch, cp);
+        return el;
+      }),
+    );
+    const n = (input.value.match(INVISIBLE) ?? []).length;
+    document.getElementById('te-inv')!.textContent = n ? `${n} ${L.invisible}` : '';
+    document.getElementById('te-clean')!.hidden = !n;
+  }
+
+  function run() {
+    const mode = radio('te-mode');
+    root.querySelectorAll<HTMLElement>('[data-for]').forEach((el) => (el.hidden = el.dataset.for !== mode));
+    err.hidden = true;
+    const enc = radio('te-dir') === 'encode';
+    const v = input.value;
+    try {
+      if (mode === 'html') out.value = enc ? htmlEncode(v, (document.getElementById('te-nonascii') as HTMLInputElement).checked ? 'non-ascii' : 'minimal') : htmlDecode(v);
+      else if (mode === 'unicode') out.value = enc ? unicodeEscape(v, radio('te-style') as UnicodeStyle, (document.getElementById('te-only') as HTMLInputElement).checked) : unicodeUnescape(v);
+      else out.value = enc ? jsonEscape(v) : jsonUnescape(v);
+    } catch (e) {
+      out.value = '';
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+    inspect();
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'swap') {
+      input.value = out.value;
+      const next = radio('te-dir') === 'encode' ? 'decode' : 'encode';
+      (root.querySelector(`input[name="te-dir"][value="${next}"]`) as HTMLInputElement).checked = true;
+    } else if (act === 'clear') input.value = '';
+    else if (act === 'clean') input.value = input.value.replace(INVISIBLE, (c) => (c === '\u00a0' || c === '\u3000' ? ' ' : ''));
+    else return;
+    run();
+  });
+  run();
+</script>

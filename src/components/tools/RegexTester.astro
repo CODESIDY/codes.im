@@ -1,0 +1,203 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { pattern: 'Pattern', flags: 'Flags', text: 'Test string', replace: 'Replace with', result: 'Replace result', matches: 'matches', match: 'match', none: 'No matches', groups: 'Groups', index: 'index' },
+  zh: { pattern: '正则表达式', flags: '修饰符', text: '测试文本', replace: '替换为', result: '替换结果', matches: '个匹配', match: '个匹配', none: '没有匹配', groups: '分组', index: '位置' },
+}[lang];
+const sampleText = lang === 'zh'
+  ? '联系我们：hello@codes.im 或 support@example.com\n电话：010-1234-5678，日期：2026-10-21'
+  : 'Contact: hello@codes.im or support@example.com\nCall 555-123-4567 before 2026-10-21';
+const defaultPattern = String.raw`(?<user>[\w.+-]+)@(?<domain>[\w-]+\.[\w.]+)`;
+const flags = [
+  ['g', 'global'],
+  ['i', 'ignore case'],
+  ['m', 'multiline'],
+  ['s', 'dotAll'],
+  ['u', 'unicode'],
+  ['y', 'sticky'],
+];
+---
+
+<div id="rx" data-l={JSON.stringify(L)}>
+  <label class="label" for="rx-pattern">{L.pattern}</label>
+  <div class="flex items-center gap-2">
+    <div class="flex flex-1 items-center rounded-lg border border-zinc-300 bg-white font-mono text-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 dark:border-zinc-700 dark:bg-zinc-900">
+      <span class="pl-3 text-zinc-400">/</span>
+      <input id="rx-pattern" class="w-full bg-transparent px-1 py-2 outline-none" spellcheck="false" autocomplete="off" value={defaultPattern} />
+      <span id="rx-flags-view" class="pr-3 text-zinc-400">/g</span>
+    </div>
+  </div>
+  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+    <span class="mr-1 text-xs text-zinc-500">{L.flags}</span>
+    {
+      flags.map(([f, title]) => (
+        <label class="chip font-mono" title={title}>
+          <input type="checkbox" value={f} checked={f === 'g'} class="sr-only" data-flag />
+          {f}
+          <span class="font-sans text-[10px] opacity-60">{title}</span>
+        </label>
+      ))
+    }
+  </div>
+  <p id="rx-err" class="mt-3 error-box" hidden></p>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="rx-text">{L.text}</label>
+        <span id="rx-count" class="text-xs text-zinc-500"></span>
+      </div>
+      <div class="relative">
+        <div
+          id="rx-hl"
+          aria-hidden="true"
+          class="code pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent px-3 py-2 break-words whitespace-pre-wrap text-transparent"
+        >
+        </div>
+        <textarea id="rx-text" class="field relative min-h-56 bg-transparent! dark:bg-transparent!" spellcheck="false">{sampleText}</textarea>
+      </div>
+    </div>
+    <div>
+      <span class="label">{L.groups}</span>
+      <div id="rx-list" class="max-h-72 space-y-2 overflow-auto"></div>
+    </div>
+  </div>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label" for="rx-rep">{L.replace}</label>
+      <input id="rx-rep" class="field font-mono" spellcheck="false" placeholder="$<user> [at] $<domain>" />
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{L.result}</span>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#rx-result">{t('common.copy')}</button>
+      </div>
+      <pre id="rx-result" class="code min-h-10 overflow-auto rounded-lg bg-zinc-50 px-3 py-2 whitespace-pre-wrap dark:bg-zinc-800/50"></pre>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  #rx-hl mark {
+    color: transparent;
+    border-radius: 3px;
+    background: oklch(0.78 0.14 165 / 0.4);
+  }
+  #rx-hl mark:nth-of-type(even) {
+    background: oklch(0.75 0.13 235 / 0.4);
+  }
+</style>
+
+<script>
+  const root = document.getElementById('rx')!;
+  const L = JSON.parse(root.dataset.l!);
+  const pattern = document.getElementById('rx-pattern') as HTMLInputElement;
+  const text = document.getElementById('rx-text') as HTMLTextAreaElement;
+  const hl = document.getElementById('rx-hl')!;
+  const list = document.getElementById('rx-list')!;
+  const count = document.getElementById('rx-count')!;
+  const err = document.getElementById('rx-err')!;
+  const rep = document.getElementById('rx-rep') as HTMLInputElement;
+  const result = document.getElementById('rx-result')!;
+  const flagsView = document.getElementById('rx-flags-view')!;
+
+  const MAX = 1000;
+
+  function flags() {
+    return [...root.querySelectorAll<HTMLInputElement>('[data-flag]:checked')].map((f) => f.value).join('');
+  }
+
+  function cell(label: string, value: string | undefined) {
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 font-mono text-xs';
+    const k = document.createElement('span');
+    k.className = 'shrink-0 text-zinc-500';
+    k.textContent = label;
+    const v = document.createElement('span');
+    v.className = 'break-all text-zinc-900 dark:text-zinc-100';
+    v.textContent = value === undefined ? 'undefined' : JSON.stringify(value);
+    row.append(k, v);
+    return row;
+  }
+
+  function run() {
+    const f = flags();
+    flagsView.textContent = '/' + f;
+    err.hidden = true;
+    const src = text.value;
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern.value, f);
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+      hl.replaceChildren(src);
+      list.replaceChildren();
+      count.textContent = '';
+      result.textContent = '';
+      return;
+    }
+
+    const matches: RegExpExecArray[] = [];
+    if (pattern.value) {
+      if (f.includes('g') || f.includes('y')) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(src)) && matches.length < MAX) {
+          matches.push(m);
+          if (m[0] === '') re.lastIndex++;
+        }
+      } else {
+        const m = re.exec(src);
+        if (m) matches.push(m);
+      }
+    }
+
+    // Highlight layer
+    const nodes: Node[] = [];
+    let pos = 0;
+    for (const m of matches) {
+      if (m.index > pos) nodes.push(document.createTextNode(src.slice(pos, m.index)));
+      const mark = document.createElement('mark');
+      mark.textContent = m[0] || '\u200b';
+      nodes.push(mark);
+      pos = m.index + m[0].length;
+    }
+    nodes.push(document.createTextNode(src.slice(pos) + '\n'));
+    hl.replaceChildren(...nodes);
+
+    count.textContent = matches.length ? `${matches.length}${matches.length >= MAX ? '+' : ''} ${matches.length === 1 ? L.match : L.matches}` : L.none;
+
+    list.replaceChildren(
+      ...matches.slice(0, 200).map((m, i) => {
+        const box = document.createElement('div');
+        box.className = 'rounded-lg border border-zinc-200 p-2 dark:border-zinc-800';
+        const head = document.createElement('div');
+        head.className = 'mb-1 flex justify-between text-xs text-zinc-500';
+        head.innerHTML = `<span>#${i + 1}</span><span>${L.index} ${m.index}</span>`;
+        box.append(head, cell('$&', m[0]));
+        for (let g = 1; g < m.length; g++) box.append(cell(`$${g}`, m[g]));
+        if (m.groups) for (const [k, v] of Object.entries(m.groups)) box.append(cell(`$<${k}>`, v));
+        return box;
+      }),
+    );
+
+    result.textContent = rep.value || rep.matches(':focus') ? src.replace(re, rep.value) : '';
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  text.addEventListener('scroll', () => {
+    hl.scrollTop = text.scrollTop;
+  });
+  new ResizeObserver(() => {
+    hl.style.height = text.offsetHeight + 'px';
+  }).observe(text);
+  run();
+</script>

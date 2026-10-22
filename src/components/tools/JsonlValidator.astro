@@ -1,0 +1,164 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { open: 'Open .jsonl file', lines: 'Records', valid: 'Valid', errors: 'Errors', warnings: 'Warnings', format: 'Format', chat: 'Chat fine-tuning (messages)', pc: 'Prompt / completion', generic: 'Generic JSONL', issues: 'Issues', noIssues: 'No problems found', line: 'Line', preview: 'Preview', roles: 'Role counts', toJsonl: 'JSON array → JSONL', toArray: 'JSONL → JSON array', more: 'more', convertErr: 'Conversion failed' },
+  zh: { open: '打开 .jsonl 文件', lines: '记录数', valid: '合法', errors: '错误', warnings: '警告', format: '格式', chat: '对话微调（messages）', pc: 'Prompt / completion', generic: '通用 JSONL', issues: '问题列表', noIssues: '没有发现问题', line: '第', preview: '预览', roles: '角色统计', toJsonl: 'JSON 数组 → JSONL', toArray: 'JSONL → JSON 数组', more: '条未显示', convertErr: '转换失败' },
+}[lang];
+const sample = [
+  { messages: [{ role: 'system', content: 'You are a helpful assistant.' }, { role: 'user', content: 'What is MCP?' }, { role: 'assistant', content: 'The Model Context Protocol connects AI apps to tools.' }] },
+  { messages: [{ role: 'user', content: 'Translate “hello” to French.' }, { role: 'assistant', content: 'Bonjour' }] },
+  { messages: [{ role: 'user', content: 'Missing the answer' }] },
+]
+  .map((x) => JSON.stringify(x))
+  .concat(['{"messages": [{"role": "user", "content": "trailing comma"},]}'])
+  .join('\n');
+---
+
+<div id="jl" data-l={JSON.stringify(L)}>
+  <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+    <label class="label mb-0" for="jl-in">JSONL</label>
+    <span class="flex flex-wrap gap-2">
+      <label class="btn px-2 py-0.5 text-xs">{L.open}<input type="file" id="jl-file" accept=".jsonl,.ndjson,.json,.txt" class="sr-only" /></label>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="toJsonl">{L.toJsonl}</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="toArray">{L.toArray}</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#jl-in">{t('common.copy')}</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="jl-in" class="field min-h-64 whitespace-pre" wrap="off" spellcheck="false">{sample}</textarea>
+  <p id="jl-err" class="mt-2 error-box" hidden></p>
+
+  <dl class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+    <div class="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50"><dt class="text-xs text-zinc-500">{L.lines}</dt><dd id="jl-lines" class="font-mono text-xl font-semibold"></dd></div>
+    <div class="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50"><dt class="text-xs text-zinc-500">{L.valid}</dt><dd id="jl-valid" class="font-mono text-xl font-semibold text-brand-700 dark:text-brand-400"></dd></div>
+    <div class="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50"><dt class="text-xs text-zinc-500">{L.errors}</dt><dd id="jl-errors" class="font-mono text-xl font-semibold text-red-600 dark:text-red-400"></dd></div>
+    <div class="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50"><dt class="text-xs text-zinc-500">{L.warnings}</dt><dd id="jl-warnings" class="font-mono text-xl font-semibold text-amber-600 dark:text-amber-400"></dd></div>
+    <div class="col-span-2 rounded-lg bg-zinc-50 px-3 py-2 sm:col-span-1 dark:bg-zinc-800/50"><dt class="text-xs text-zinc-500">{L.format}</dt><dd id="jl-format" class="mt-1 text-sm font-medium"></dd></div>
+  </dl>
+  <p id="jl-roles" class="mt-2 font-mono text-xs text-zinc-500"></p>
+
+  <h3 class="mt-6 mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.issues}</h3>
+  <ul id="jl-issues" class="max-h-64 space-y-1 overflow-auto text-sm"></ul>
+
+  <h3 class="mt-6 mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.preview}</h3>
+  <div class="max-h-96 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <table id="jl-table" class="w-full text-left text-xs"></table>
+  </div>
+</div>
+
+<script>
+  import { arrayToJsonl, jsonlToArray, validateJsonl } from '../../lib/jsonl';
+
+  const root = document.getElementById('jl')!;
+  const L = JSON.parse(root.dataset.l!);
+  const zh = document.documentElement.lang.startsWith('zh');
+  const input = document.getElementById('jl-in') as HTMLTextAreaElement;
+  const err = document.getElementById('jl-err')!;
+  const $ = (id: string) => document.getElementById(`jl-${id}`)!;
+
+  const cellText = (v: unknown) => {
+    const s = typeof v === 'string' ? v : JSON.stringify(v);
+    return s.length > 120 ? s.slice(0, 120) + '…' : s;
+  };
+
+  function run() {
+    err.hidden = true;
+    const r = validateJsonl(input.value);
+    const errors = r.issues.filter((i) => i.level === 'error');
+    $('lines').textContent = String(r.lines);
+    $('valid').textContent = String(r.valid);
+    $('errors').textContent = String(errors.length);
+    $('warnings').textContent = String(r.issues.length - errors.length);
+    $('format').textContent = r.format === 'chat' ? L.chat : r.format === 'prompt-completion' ? L.pc : L.generic;
+    $('roles').textContent = Object.keys(r.roles).length
+      ? `${L.roles}: ` + Object.entries(r.roles).map(([k, v]) => `${k} ×${v}`).join(' · ')
+      : '';
+
+    const list = $('issues');
+    if (!r.issues.length) {
+      const li = document.createElement('li');
+      li.className = 'ok-box';
+      li.textContent = '✓ ' + L.noIssues;
+      list.replaceChildren(li);
+    } else {
+      list.replaceChildren(
+        ...r.issues.slice(0, 300).map((i) => {
+          const li = document.createElement('li');
+          li.className = 'flex gap-3 rounded-md px-2 py-1 ' + (i.level === 'error' ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300');
+          const ln = document.createElement('span');
+          ln.className = 'w-20 shrink-0 font-mono text-xs leading-5';
+          ln.textContent = zh ? `第 ${i.line} 行` : `${L.line} ${i.line}`;
+          const msg = document.createElement('span');
+          msg.textContent = i.message;
+          li.append(ln, msg);
+          return li;
+        }),
+      );
+    }
+
+    // Preview table
+    const table = $('table') as HTMLTableElement;
+    table.replaceChildren();
+    if (!r.rows.length) return;
+    const chat = r.format === 'chat';
+    const cols = chat ? ['#', 'roles', 'user', 'assistant'] : ['#', ...r.keys.slice(0, 6)];
+    const head = table.createTHead().insertRow();
+    for (const c of cols) {
+      const th = document.createElement('th');
+      th.className = 'sticky top-0 bg-zinc-50 px-3 py-2 font-medium text-zinc-500 dark:bg-zinc-900';
+      th.textContent = c;
+      head.append(th);
+    }
+    const body = table.createTBody();
+    r.rows.slice(0, 100).forEach((row, i) => {
+      const tr = body.insertRow();
+      tr.className = 'border-t border-zinc-200 align-top dark:border-zinc-800';
+      const o = row as Record<string, unknown>;
+      let cells: string[];
+      if (chat) {
+        const msgs = (Array.isArray(o.messages) ? o.messages : []) as { role?: string; content?: unknown }[];
+        const find = (role: string) => [...msgs].reverse().find((m) => m.role === role)?.content ?? '';
+        cells = [String(i + 1), msgs.map((m) => m.role).join(' → '), cellText(find('user')), cellText(find('assistant'))];
+      } else {
+        cells = [String(i + 1), ...r.keys.slice(0, 6).map((k) => (k in o ? cellText(o[k]) : ''))];
+      }
+      for (const c of cells) {
+        const td = tr.insertCell();
+        td.className = 'px-3 py-1.5 font-mono text-zinc-700 dark:text-zinc-300';
+        td.textContent = c;
+      }
+    });
+  }
+
+  let timer = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 150);
+  });
+  (document.getElementById('jl-file') as HTMLInputElement).addEventListener('change', async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    input.value = await f.text();
+    (e.target as HTMLInputElement).value = '';
+    run();
+  });
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (!act) return;
+    try {
+      if (act === 'toJsonl') input.value = arrayToJsonl(input.value);
+      else if (act === 'toArray') input.value = jsonlToArray(input.value);
+      else if (act === 'clear') input.value = '';
+      run();
+    } catch (x) {
+      err.hidden = false;
+      err.textContent = `${L.convertErr}: ${(x as Error).message}`;
+    }
+  });
+  run();
+</script>

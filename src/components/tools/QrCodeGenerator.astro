@@ -1,0 +1,165 @@
+---
+import { type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = {
+  en: { url: 'URL / Text', wifi: 'Wi-Fi', contact: 'Contact', content: 'Content', ssid: 'Network name (SSID)', pass: 'Password', security: 'Security', none: 'None', hidden: 'Hidden network', name: 'Name', phone: 'Phone', email: 'Email', org: 'Company', site: 'Website', size: 'Size', fg: 'Color', bg: 'Background', ecc: 'Error correction', png: 'Download PNG', svg: 'Download SVG', tooLong: 'Too much data for a QR code — shorten the text or lower error correction.' },
+  zh: { url: '网址 / 文本', wifi: 'Wi-Fi', contact: '名片', content: '内容', ssid: '网络名称（SSID）', pass: '密码', security: '加密方式', none: '无', hidden: '隐藏网络', name: '姓名', phone: '电话', email: '邮箱', org: '公司', site: '网站', size: '尺寸', fg: '颜色', bg: '背景', ecc: '容错级别', png: '下载 PNG', svg: '下载 SVG', tooLong: '内容太长，无法生成二维码 —— 请缩短内容或降低容错级别。' },
+}[lang];
+---
+
+<div id="qr" data-l={JSON.stringify(L)}>
+  <div class="grid gap-6 lg:grid-cols-[1fr_320px]">
+    <div>
+      <div class="mb-4 flex gap-1.5">
+        <label class="chip"><input type="radio" name="qr-type" value="text" checked class="sr-only" />{L.url}</label>
+        <label class="chip"><input type="radio" name="qr-type" value="wifi" class="sr-only" />{L.wifi}</label>
+        <label class="chip"><input type="radio" name="qr-type" value="contact" class="sr-only" />{L.contact}</label>
+      </div>
+
+      <div data-type="text">
+        <label class="label" for="qr-text">{L.content}</label>
+        <textarea id="qr-text" class="field min-h-28!" spellcheck="false">https://codes.im</textarea>
+      </div>
+
+      <div data-type="wifi" class="grid gap-3 sm:grid-cols-2" hidden>
+        <div><label class="label" for="qr-ssid">{L.ssid}</label><input id="qr-ssid" class="field" value="MyWiFi" /></div>
+        <div><label class="label" for="qr-pass">{L.pass}</label><input id="qr-pass" class="field font-mono" /></div>
+        <div>
+          <label class="label" for="qr-sec">{L.security}</label>
+          <select id="qr-sec" class="field">
+            <option value="WPA">WPA / WPA2 / WPA3</option>
+            <option value="WEP">WEP</option>
+            <option value="nopass">{L.none}</option>
+          </select>
+        </div>
+        <label class="chip self-end"><input type="checkbox" id="qr-hidden" class="sr-only" />{L.hidden}</label>
+      </div>
+
+      <div data-type="contact" class="grid gap-3 sm:grid-cols-2" hidden>
+        {(['name', 'phone', 'email', 'org', 'site'] as const).map((k) => <div><label class="label" for={`qr-c-${k}`}>{L[k]}</label><input id={`qr-c-${k}`} class="field" /></div>)}
+      </div>
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-4">
+        <div class="sm:col-span-2">
+          <label class="label" for="qr-size">{L.size}: <span id="qr-size-v" class="font-mono"></span></label>
+          <input id="qr-size" type="range" min="128" max="1024" step="32" value="384" class="w-full accent-brand-600" />
+        </div>
+        <div><label class="label" for="qr-fg">{L.fg}</label><input id="qr-fg" type="color" value="#18181b" class="h-9 w-full cursor-pointer rounded-lg border border-zinc-300 bg-transparent p-1 dark:border-zinc-700" /></div>
+        <div><label class="label" for="qr-bg">{L.bg}</label><input id="qr-bg" type="color" value="#ffffff" class="h-9 w-full cursor-pointer rounded-lg border border-zinc-300 bg-transparent p-1 dark:border-zinc-700" /></div>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center gap-1.5">
+        <span class="mr-1 text-sm text-zinc-600 dark:text-zinc-400">{L.ecc}</span>
+        {(['L', 'M', 'Q', 'H'] as const).map((e) => <label class="chip font-mono"><input type="radio" name="qr-ecc" value={e} checked={e === 'M'} class="sr-only" />{e}</label>)}
+      </div>
+    </div>
+
+    <div class="flex flex-col items-center gap-3">
+      <div id="qr-box" class="grid aspect-square w-full max-w-80 place-items-center rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800"></div>
+      <p id="qr-err" class="error-box w-full" hidden>{L.tooLong}</p>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary" data-act="png">{L.png}</button>
+        <button type="button" class="btn" data-act="svg">{L.svg}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import qrcode from 'qrcode-generator';
+  import { downloadText } from '../../scripts/download';
+
+  const root = document.getElementById('qr')!;
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(`qr-${id}`) as T;
+  const radio = (n: string) => (root.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement).value;
+  const v = (id: string) => $<HTMLInputElement>(id).value.trim();
+
+  // Escape special characters in Wi-Fi / MECARD fields.
+  const esc = (s: string) => s.replace(/([\\;,:"])/g, '\\$1');
+
+  function payload(): string {
+    const type = radio('qr-type');
+    if (type === 'wifi') {
+      const sec = $<HTMLSelectElement>('sec').value;
+      return `WIFI:T:${sec};S:${esc(v('ssid'))};${sec === 'nopass' ? '' : `P:${esc(v('pass'))};`}${$<HTMLInputElement>('hidden').checked ? 'H:true;' : ''};`;
+    }
+    if (type === 'contact') {
+      const lines = ['BEGIN:VCARD', 'VERSION:3.0', `FN:${v('c-name')}`];
+      if (v('c-org')) lines.push(`ORG:${v('c-org')}`);
+      if (v('c-phone')) lines.push(`TEL:${v('c-phone')}`);
+      if (v('c-email')) lines.push(`EMAIL:${v('c-email')}`);
+      if (v('c-site')) lines.push(`URL:${v('c-site')}`);
+      lines.push('END:VCARD');
+      return lines.join('\n');
+    }
+    return $<HTMLTextAreaElement>('text').value;
+  }
+
+  // The library's default byte encoder is Latin-1 only; encode as UTF-8 so Chinese and emoji work.
+  qrcode.stringToBytes = (s: string) => Array.from(new TextEncoder().encode(s));
+
+  let svg = '';
+  let matrix: { size: number; dark: (r: number, c: number) => boolean } | null = null;
+
+  function run() {
+    const type = radio('qr-type');
+    root.querySelectorAll<HTMLElement>('[data-type]').forEach((el) => (el.hidden = el.dataset.type !== type));
+    $('size-v').textContent = `${v('size')}px`;
+    $('err').hidden = true;
+    const data = payload();
+    try {
+      const q = qrcode(0, radio('qr-ecc') as 'L' | 'M' | 'Q' | 'H');
+      q.addData(data || ' ', 'Byte');
+      q.make();
+      const n = q.getModuleCount();
+      matrix = { size: n, dark: (r, c) => q.isDark(r, c) };
+    } catch {
+      matrix = null;
+      $('err').hidden = false;
+      $('box').replaceChildren();
+      return;
+    }
+    const quiet = 4;
+    const total = matrix.size + quiet * 2;
+    let path = '';
+    for (let r = 0; r < matrix.size; r++) for (let c = 0; c < matrix.size; c++) if (matrix.dark(r, c)) path += `M${c + quiet} ${r + quiet}h1v1h-1z`;
+    const fg = v('fg');
+    const bg = v('bg');
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="${bg}"/><path d="${path}" fill="${fg}"/></svg>`;
+    $('box').innerHTML = svg;
+    ($('box').firstElementChild as SVGElement).setAttribute('class', 'h-full w-full');
+  }
+
+  function downloadPng() {
+    if (!matrix) return;
+    const size = Number(v('size'));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, size, size);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'qrcode.png';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      }, 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('<svg ', `<svg width="${size}" height="${size}" `));
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'png') downloadPng();
+    else if (act === 'svg') downloadText('qrcode.svg', svg, 'image/svg+xml');
+  });
+  run();
+</script>

@@ -1,0 +1,88 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { name: 'Schema name', invalid: 'Invalid JSON' },
+  zh: { name: 'Schema 名称', invalid: 'JSON 不合法' },
+}[lang];
+const sample = JSON.stringify(
+  {
+    id: 'msg_01',
+    role: 'assistant',
+    content: [{ type: 'text', text: 'Hello!' }],
+    usage: { input_tokens: 12, output_tokens: 5 },
+    stop_reason: null,
+    tags: ['greeting'],
+  },
+  null,
+  2,
+);
+---
+
+<div id="zd" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.name}
+      <input id="zd-name" class="field h-8 w-36 py-0 font-mono" value="Message" />
+    </label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="zd-in">JSON</label>
+      <textarea id="zd-in" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="zd-out">Zod</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#zd-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="zd-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="zd-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { parseJson } from '../../lib/json';
+  import { jsonToZod } from '../../lib/schema';
+
+  const root = document.getElementById('zd')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('zd-in') as HTMLTextAreaElement;
+  const output = document.getElementById('zd-out') as HTMLTextAreaElement;
+  const name = document.getElementById('zd-name') as HTMLInputElement;
+  const err = document.getElementById('zd-err')!;
+
+  function run() {
+    err.hidden = true;
+    if (!input.value.trim()) {
+      output.value = '';
+      return;
+    }
+    const r = parseJson(input.value);
+    if (!r.ok) {
+      err.hidden = false;
+      err.textContent = `${L.invalid}: ${r.error.message}`;
+      return;
+    }
+    output.value = jsonToZod(r.value, name.value || 'Root');
+  }
+  root.addEventListener('input', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

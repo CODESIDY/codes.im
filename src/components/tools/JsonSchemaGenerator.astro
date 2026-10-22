@@ -1,0 +1,108 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { name: 'Name', desc: 'Description', descPh: 'What this tool / output is for', strict: 'Strict (LLM structured outputs)', format: 'Output', invalid: 'Invalid JSON', plain: 'JSON Schema', oaResp: 'OpenAI response_format', oaTool: 'OpenAI tool', anTool: 'Anthropic tool' },
+  zh: { name: '名称', desc: '描述', descPh: '这个工具 / 输出是做什么的', strict: '严格模式（大模型结构化输出）', format: '输出格式', invalid: 'JSON 不合法', plain: 'JSON Schema', oaResp: 'OpenAI response_format', oaTool: 'OpenAI tool', anTool: 'Anthropic tool' },
+}[lang];
+const sample = JSON.stringify(
+  {
+    title: 'Weekly sync notes',
+    sentiment: 'positive',
+    action_items: [
+      { owner: 'Ada', task: 'Ship v2 landing page', due: '2026-11-01' },
+      { owner: 'Lin', task: 'Review pricing' },
+    ],
+    confidence: 0.92,
+  },
+  null,
+  2,
+);
+---
+
+<div id="js" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.name}
+      <input id="js-name" class="field h-8 w-40 py-0 font-mono" value="extract_notes" />
+    </label>
+    <label class="chip"><input type="checkbox" id="js-strict" checked class="sr-only" />{L.strict}</label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="mb-3 flex flex-wrap items-center gap-1.5">
+    <span class="mr-1 text-sm text-zinc-600 dark:text-zinc-400">{L.format}</span>
+    <label class="chip"><input type="radio" name="js-wrap" value="schema" class="sr-only" />{L.plain}</label>
+    <label class="chip"><input type="radio" name="js-wrap" value="openai-response" checked class="sr-only" />{L.oaResp}</label>
+    <label class="chip"><input type="radio" name="js-wrap" value="openai-tool" class="sr-only" />{L.oaTool}</label>
+    <label class="chip"><input type="radio" name="js-wrap" value="anthropic-tool" class="sr-only" />{L.anTool}</label>
+    <input id="js-desc" class="field ml-2 h-8 max-w-xs py-0" placeholder={L.descPh} aria-label={L.desc} hidden />
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="js-in">{lang === 'zh' ? '示例 JSON' : 'Sample JSON'}</label>
+      <textarea id="js-in" class="field min-h-96" spellcheck="false" placeholder='{"answer": "...", "sources": ["..."]}'></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="js-out">{t('common.output')}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#js-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="js-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="js-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { parseJson } from '../../lib/json';
+  import { jsonToSchema, wrapSchema, type SchemaWrapper } from '../../lib/schema';
+
+  const root = document.getElementById('js')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('js-in') as HTMLTextAreaElement;
+  const output = document.getElementById('js-out') as HTMLTextAreaElement;
+  const name = document.getElementById('js-name') as HTMLInputElement;
+  const desc = document.getElementById('js-desc') as HTMLInputElement;
+  const strict = document.getElementById('js-strict') as HTMLInputElement;
+  const err = document.getElementById('js-err')!;
+
+  function run() {
+    const wrap = (root.querySelector('input[name="js-wrap"]:checked') as HTMLInputElement).value as SchemaWrapper;
+    desc.hidden = wrap === 'schema' || wrap === 'openai-response';
+    err.hidden = true;
+    if (!input.value.trim()) {
+      output.value = '';
+      return;
+    }
+    const r = parseJson(input.value);
+    if (!r.ok) {
+      err.hidden = false;
+      err.textContent = `${L.invalid}: ${r.error.message}`;
+      return;
+    }
+    // OpenAI's strict wrappers require strict schemas.
+    const isStrict = strict.checked || wrap === 'openai-response' || wrap === 'openai-tool';
+    if (isStrict !== strict.checked) strict.checked = true;
+    const schema = jsonToSchema(r.value, { strict: isStrict, title: wrap === 'schema' ? name.value : undefined });
+    output.value = JSON.stringify(wrapSchema(schema, wrap, name.value, desc.value), null, 2);
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

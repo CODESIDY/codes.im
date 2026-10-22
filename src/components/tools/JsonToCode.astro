@@ -1,0 +1,97 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { root: 'Root type name', invalid: 'Invalid JSON' },
+  zh: { root: '根类型名', invalid: 'JSON 不合法' },
+}[lang];
+const sample = JSON.stringify(
+  {
+    order_id: 1042,
+    customer: { name: 'Ada Lovelace', email: 'ada@example.com' },
+    items: [
+      { sku: 'KB-01', qty: 1, price: 89.9 },
+      { sku: 'MS-02', qty: 2, price: 25.5, gift: true },
+    ],
+    coupon: null,
+    'created-at': '2026-10-22T08:00:00Z',
+  },
+  null,
+  2,
+);
+---
+
+<div id="jc" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <span class="flex gap-1.5">
+      <label class="chip"><input type="radio" name="jc-lang" value="pydantic" checked class="sr-only" />Pydantic</label>
+      <label class="chip"><input type="radio" name="jc-lang" value="go" class="sr-only" />Go</label>
+      <label class="chip"><input type="radio" name="jc-lang" value="rust" class="sr-only" />Rust (serde)</label>
+    </span>
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.root}
+      <input id="jc-name" class="field h-8 w-32 py-0 font-mono" value="Order" />
+    </label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="jc-in">JSON</label>
+      <textarea id="jc-in" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{t('common.output')}</span>
+        <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#jc-out">{t('common.copy')}</button>
+      </div>
+      <pre id="jc-out" class="code min-h-96 overflow-auto rounded-lg bg-zinc-900 p-4 text-zinc-100 dark:bg-black"></pre>
+    </div>
+  </div>
+  <p id="jc-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { parseJson } from '../../lib/json';
+  import { jsonToCode, type CodeLang } from '../../lib/json-to-code';
+
+  const root = document.getElementById('jc')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('jc-in') as HTMLTextAreaElement;
+  const out = document.getElementById('jc-out')!;
+  const name = document.getElementById('jc-name') as HTMLInputElement;
+  const err = document.getElementById('jc-err')!;
+
+  function run() {
+    err.hidden = true;
+    if (!input.value.trim()) {
+      out.textContent = '';
+      return;
+    }
+    const r = parseJson(input.value);
+    if (!r.ok) {
+      err.hidden = false;
+      err.textContent = `${L.invalid}: ${r.error.message}`;
+      return;
+    }
+    const lang = (root.querySelector('input[name="jc-lang"]:checked') as HTMLInputElement).value as CodeLang;
+    out.textContent = jsonToCode(r.value, lang, name.value || 'Root');
+  }
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

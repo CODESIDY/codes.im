@@ -1,0 +1,161 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    who: ['Owner (u)', 'Group (g)', 'Others (o)'],
+    perm: ['Read', 'Write', 'Execute'],
+    special: 'Special bits',
+    setuid: 'setuid',
+    setgid: 'setgid',
+    sticky: 'sticky',
+    octal: 'Octal',
+    symbolic: 'Symbolic',
+    apply: 'Apply a change (e.g. u+x,go-w)',
+    commands: 'Commands',
+    presets: 'Common',
+  },
+  zh: {
+    who: ['所有者 (u)', '所属组 (g)', '其他人 (o)'],
+    perm: ['读', '写', '执行'],
+    special: '特殊权限位',
+    setuid: 'setuid',
+    setgid: 'setgid',
+    sticky: 'sticky',
+    octal: '八进制',
+    symbolic: '符号表示',
+    apply: '应用一个修改（如 u+x,go-w）',
+    commands: '命令',
+    presets: '常用',
+  },
+}[lang];
+const presets = ['644', '755', '600', '700', '664', '775', '777', '400', '1777', '2775'];
+---
+
+<div id="cm">
+  <div class="grid gap-5 lg:grid-cols-[1fr_1fr]">
+    <div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-zinc-500">
+            <th></th>
+            {L.perm.map((p) => <th class="px-2 py-1.5 font-medium">{p}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {
+            ['user', 'group', 'other'].map((w, i) => (
+              <tr>
+                <th class="py-1.5 pr-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{L.who[i]}</th>
+                {[4, 2, 1].map((bit) => (
+                  <td class="px-2 py-1.5 text-center">
+                    <input type="checkbox" class="h-4 w-4 accent-brand-600" data-who={w} data-bit={bit} aria-label={`${L.who[i]} ${L.perm[[4, 2, 1].indexOf(bit)]}`} />
+                  </td>
+                ))}
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+      <p class="label mt-4">{L.special}</p>
+      <div class="flex flex-wrap gap-1.5">
+        {(['setuid', 'setgid', 'sticky'] as const).map((k) => <label class="chip"><input type="checkbox" data-special={k} class="sr-only" />{L[k]}</label>)}
+      </div>
+      <p class="label mt-4">{L.presets}</p>
+      <div class="flex flex-wrap gap-1.5">
+        {presets.map((p) => <button type="button" class="kbd cursor-pointer px-2 py-1 hover:text-brand-700 dark:hover:text-brand-400" data-preset={p}>{p}</button>)}
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <label class="block"><span class="label">{L.octal}</span><input id="cm-oct" class="field font-mono text-lg" spellcheck="false" autocomplete="off" /></label>
+      <label class="block"><span class="label">{L.symbolic}</span><input id="cm-sym" class="field font-mono text-lg" spellcheck="false" autocomplete="off" /></label>
+      <label class="block"><span class="label">{L.apply}</span><input id="cm-apply" class="field font-mono" spellcheck="false" autocomplete="off" placeholder="u+x,go-w" /></label>
+      <p id="cm-err" class="error-box" hidden></p>
+      <div>
+        <span class="label">{L.commands}</span>
+        <ul id="cm-cmds" class="space-y-1.5"></ul>
+      </div>
+    </div>
+  </div>
+  <template id="cm-copy-label">{t('common.copy')}</template>
+</div>
+
+<script>
+  import { applySymbolic, fromOctal, fromSymbolic, toAssignment, toOctal, toSymbolic, type Perms } from '../../lib/chmod';
+
+  const root = document.getElementById('cm')!;
+  const oct = document.getElementById('cm-oct') as HTMLInputElement;
+  const sym = document.getElementById('cm-sym') as HTMLInputElement;
+  const apply = document.getElementById('cm-apply') as HTMLInputElement;
+  const err = document.getElementById('cm-err')!;
+  const cmds = document.getElementById('cm-cmds')!;
+  const copyLabel = (document.getElementById('cm-copy-label') as HTMLTemplateElement).innerHTML;
+  const boxes = [...root.querySelectorAll<HTMLInputElement>('input[data-who]')];
+  const specials = [...root.querySelectorAll<HTMLInputElement>('input[data-special]')];
+  let perms: Perms = fromOctal('755');
+
+  function render(skip?: HTMLElement) {
+    for (const b of boxes) b.checked = !!(perms[b.dataset.who as 'user'] & Number(b.dataset.bit));
+    for (const s of specials) s.checked = perms[s.dataset.special as 'setuid'];
+    if (skip !== oct) oct.value = toOctal(perms);
+    if (skip !== sym) sym.value = toSymbolic(perms);
+    const lines = [`chmod ${toOctal(perms)} file`, `chmod ${toAssignment(perms)} file`, `chmod -R ${toOctal(perms)} dir/`];
+    cmds.replaceChildren(
+      ...lines.map((l) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center gap-2';
+        const code = document.createElement('code');
+        code.className = 'field flex-1 py-1.5 font-mono text-[13px]';
+        code.textContent = l;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn px-2 py-1 text-xs';
+        btn.dataset.copyText = l;
+        btn.textContent = copyLabel;
+        li.append(code, btn);
+        return li;
+      }),
+    );
+  }
+
+  const guard = (fn: () => void) => {
+    err.hidden = true;
+    try {
+      fn();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  };
+
+  root.addEventListener('change', (e) => {
+    const el = e.target as HTMLInputElement;
+    if (el.dataset.who) {
+      const who = el.dataset.who as 'user' | 'group' | 'other';
+      perms = { ...perms, [who]: el.checked ? perms[who] | Number(el.dataset.bit) : perms[who] & ~Number(el.dataset.bit) };
+      render();
+    } else if (el.dataset.special) {
+      perms = { ...perms, [el.dataset.special]: el.checked };
+      render();
+    }
+  });
+  oct.addEventListener('input', () => guard(() => ((perms = fromOctal(oct.value)), render(oct))));
+  sym.addEventListener('input', () => guard(() => ((perms = fromSymbolic(sym.value)), render(sym))));
+  apply.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') guard(() => ((perms = applySymbolic(perms, apply.value)), render()));
+  });
+  apply.addEventListener('change', () => guard(() => apply.value.trim() && ((perms = applySymbolic(perms, apply.value)), render())));
+  root.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) =>
+    b.addEventListener('click', () => {
+      perms = fromOctal(b.dataset.preset!);
+      err.hidden = true;
+      render();
+    }),
+  );
+  render();
+</script>

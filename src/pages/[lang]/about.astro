@@ -1,0 +1,106 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { config, isSet } from '../../config';
+import { useTranslations } from '../../i18n/ui';
+import { langs, type Lang } from '../../i18n/ui';
+import { tools } from '../../tools/registry';
+
+export function getStaticPaths() {
+  return langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const t = useTranslations(lang);
+const sponsors = (
+  [
+    ['GitHub Sponsors', config.sponsor.github],
+    [lang === 'zh' ? '爱发电' : 'Afdian', config.sponsor.afdian],
+    ['Buy Me a Coffee', config.sponsor.buymeacoffee],
+  ] as const
+).filter(([, url]) => isSet(url));
+
+// Edit this copy to tell your own story — this page doubles as your portfolio.
+const copy = {
+  en: {
+    title: 'About',
+    description: `${config.author} — full-stack engineer (web, back end, mobile), and why codes.im exists.`,
+    heading: 'Hi, I build codes.im',
+    intro: `I’m ${config.author}, a full-stack engineer who has built and shipped web front ends, back-end services and mobile apps. I’m comfortable owning a feature from the database to the UI on every platform. codes.im is the toolbox I always wanted: fast, uncluttered and honest about your data — and a public record of how I design, build and ship.`,
+    principlesTitle: 'Principles',
+    principles: [
+      ['Local first', 'Every tool runs in your browser. No input is ever sent to a server.'],
+      ['Fast', 'Static pages, tiny scripts, instant results. No sign-up walls.'],
+      ['Open', 'The entire site is open source under MIT. Read the code, file an issue, send a PR.'],
+    ],
+    stackTitle: 'Built with',
+    stack: 'Astro · TypeScript · Tailwind CSS · Web Crypto API · Cloudflare Pages',
+    workTitle: 'Hire me',
+    work: 'I’m looking for a full-time full-stack engineering role. I can take a product from idea to production across the web front end, back-end APIs and mobile, and I’m especially interested in teams building LLM-powered products. Get in touch:',
+    stats: `${tools.length} tools · 2 languages · 0 bytes uploaded`,
+  },
+  zh: {
+    title: '关于',
+    description: `${config.author}，全栈开发工程师（Web、后端、移动端），以及 codes.im 为什么存在。`,
+    heading: '你好，我是 codes.im 的作者',
+    intro: `我是 ${config.author}，一名全栈开发工程师，Web 前端、后端服务和移动端应用都做过并上线过，能独立负责一个功能从数据库到界面、跨平台的完整交付。codes.im 是我一直想要的工具箱：快速、干净，并且对你的数据足够诚实；它也公开记录了我如何设计、开发和交付一个产品。`,
+    principlesTitle: '原则',
+    principles: [
+      ['本地优先', '所有工具都在浏览器中运行，输入内容从不发送到服务器。'],
+      ['快', '静态页面、极小的脚本、即时出结果，不需要注册。'],
+      ['开放', '整站基于 MIT 协议开源。欢迎阅读代码、提 Issue、发 PR。'],
+    ],
+    stackTitle: '技术栈',
+    stack: 'Astro · TypeScript · Tailwind CSS · Web Crypto API · Cloudflare Pages',
+    workTitle: '求职',
+    work: '我正在寻找全栈开发工程师的全职岗位。能把一个产品从想法推进到上线，覆盖 Web 前端、后端 API 和移动端，尤其希望加入在做大模型相关产品的团队。欢迎联系：',
+    stats: `${tools.length} 个工具 · 2 种语言 · 0 字节上传`,
+  },
+}[lang];
+---
+
+<Layout lang={lang} title={copy.title} description={copy.description}>
+  <div class="mx-auto max-w-2xl py-6">
+    <p class="font-mono text-sm text-brand-600 dark:text-brand-400">$ whoami</p>
+    <h1 class="mt-2 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{copy.heading}</h1>
+    <p class="mt-4 leading-7 text-zinc-600 dark:text-zinc-400">{copy.intro}</p>
+    <p class="mt-4 font-mono text-xs text-zinc-400">{copy.stats}</p>
+
+    <h2 class="mt-10 mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{copy.principlesTitle}</h2>
+    <div class="grid gap-3 sm:grid-cols-3">
+      {
+        copy.principles.map(([h, p]) => (
+          <div class="card p-4">
+            <p class="font-medium text-zinc-900 dark:text-zinc-100">{h}</p>
+            <p class="mt-1 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{p}</p>
+          </div>
+        ))
+      }
+    </div>
+
+    <h2 class="mt-10 mb-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{copy.stackTitle}</h2>
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">{copy.stack}</p>
+
+    <h2 class="mt-10 mb-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{copy.workTitle}</h2>
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">{copy.work}</p>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <a class="btn btn-primary" href={`mailto:${config.email}`}>{config.email}</a>
+      <a class="btn" href={config.github} target="_blank" rel="noopener">GitHub</a>
+      <a class="btn" href={config.repo} target="_blank" rel="noopener">{lang === 'zh' ? '网站源码' : 'Source code'}</a>
+    </div>
+    {
+      sponsors.length > 0 && (
+        <section id="support" class="mt-10 scroll-mt-20">
+          <h2 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('about.sponsorTitle')}</h2>
+          <p class="text-sm text-zinc-600 dark:text-zinc-400">{t('about.sponsor')}</p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {sponsors.map(([name, url]) => (
+              <a class="btn" href={url} target="_blank" rel="noopener">
+                ♥ {name}
+              </a>
+            ))}
+          </div>
+        </section>
+      )
+    }
+  </div>
+</Layout>

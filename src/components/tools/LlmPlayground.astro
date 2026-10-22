@@ -1,0 +1,338 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+import { PRESETS } from '../../lib/llm-request';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    notice: 'Requests go directly from your browser to the provider you choose. codes.im never receives your prompt or API key.',
+    provider: 'Provider',
+    baseUrl: 'Base URL',
+    model: 'Model',
+    key: 'API key',
+    remember: 'Remember in this tab',
+    system: 'System prompt',
+    user: 'User message',
+    temperature: 'Temperature',
+    maxTokens: 'Max tokens',
+    stream: 'Stream',
+    advanced: 'Tools & structured output',
+    tools: 'Tools (JSON array, OpenAI or Anthropic format)',
+    schema: 'JSON Schema for structured output',
+    send: 'Send',
+    stop: 'Stop',
+    response: 'Response',
+    raw: 'Raw',
+    curl: 'curl',
+    toolCalls: 'Tool calls',
+    status: 'Status',
+    ttft: 'First token',
+    total: 'Total',
+    usage: 'Usage',
+    finish: 'Finish reason',
+    cors: 'Request failed before reaching the API. Check the base URL and key; for Ollama, start it with OLLAMA_ORIGINS set to allow this site.',
+    badJson: 'is not valid JSON',
+  },
+  zh: {
+    notice: '请求由你的浏览器直接发送到你选择的服务商，codes.im 不会收到你的提示词和 API Key。',
+    provider: '服务商',
+    baseUrl: 'Base URL',
+    model: '模型',
+    key: 'API Key',
+    remember: '在本标签页内记住',
+    system: '系统提示词',
+    user: '用户消息',
+    temperature: '温度',
+    maxTokens: '最大输出 Token',
+    stream: '流式输出',
+    advanced: '工具调用与结构化输出',
+    tools: '工具定义（JSON 数组，OpenAI 或 Anthropic 格式均可）',
+    schema: '结构化输出的 JSON Schema',
+    send: '发送',
+    stop: '停止',
+    response: '回复',
+    raw: '原始响应',
+    curl: 'curl',
+    toolCalls: '工具调用',
+    status: '状态码',
+    ttft: '首 Token',
+    total: '总耗时',
+    usage: '用量',
+    finish: '结束原因',
+    cors: '请求没有到达接口。请检查 Base URL 和 Key；如果是 Ollama，需要设置 OLLAMA_ORIGINS 允许本站访问。',
+    badJson: '不是合法的 JSON',
+  },
+}[lang];
+---
+
+<div id="lp" data-l={JSON.stringify(L)} data-presets={JSON.stringify(PRESETS)}>
+  <p class="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+    <span aria-hidden="true">ⓘ</span>{L.notice}
+  </p>
+
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <label class="block"
+      ><span class="label">{L.provider}</span>
+      <select id="lp-preset" class="field">
+        {PRESETS.map((p) => <option value={p.id}>{p.label}</option>)}
+      </select></label
+    >
+    <label class="block"><span class="label">{L.baseUrl}</span><input id="lp-base" class="field font-mono text-xs" spellcheck="false" autocomplete="off" /></label>
+    <label class="block"><span class="label">{L.model}</span><input id="lp-model" class="field font-mono" spellcheck="false" autocomplete="off" /></label>
+    <label class="block"
+      ><span class="label">{L.key}</span>
+      <input id="lp-key" type="password" class="field font-mono" spellcheck="false" autocomplete="off" placeholder="sk-…" /></label
+    >
+  </div>
+  <label class="chip mt-2"><input type="checkbox" id="lp-remember" class="sr-only" />{L.remember}</label>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div class="space-y-3">
+      <label class="block"><span class="label">{L.system}</span><textarea id="lp-system" class="field min-h-20!">You are a concise assistant.</textarea></label>
+      <label class="block"><span class="label">{L.user}</span><textarea id="lp-user" class="field min-h-28!">{lang === 'zh' ? '用一句话解释什么是提示缓存。' : 'Explain prompt caching in one sentence.'}</textarea></label>
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="block"
+          ><span class="label">{L.temperature} <span id="lp-temp-v" class="font-mono normal-case">0.7</span></span>
+          <input id="lp-temp" type="range" min="0" max="2" step="0.1" value="0.7" class="w-40 accent-brand-600" /></label
+        >
+        <label class="block"><span class="label">{L.maxTokens}</span><input id="lp-max" type="number" min="1" value="1024" class="field w-28 font-mono" /></label>
+        <label class="chip mb-1"><input type="checkbox" id="lp-stream" checked class="sr-only" />{L.stream}</label>
+      </div>
+      <details>
+        <summary class="cursor-pointer text-sm text-brand-700 dark:text-brand-400">{L.advanced}</summary>
+        <label class="mt-2 block"><span class="label">{L.tools}</span><textarea id="lp-tools" class="field min-h-28!" spellcheck="false" placeholder='[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]'></textarea></label>
+        <label class="mt-2 block"><span class="label">{L.schema}</span><textarea id="lp-schema" class="field min-h-28!" spellcheck="false" placeholder='{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}'></textarea></label>
+      </details>
+      <div class="flex gap-2">
+        <button type="button" id="lp-send" class="btn btn-primary">{L.send} <span class="kbd ml-1 border-white/30 bg-transparent text-current">⌘↵</span></button>
+        <button type="button" id="lp-stop" class="btn" disabled>{L.stop}</button>
+      </div>
+    </div>
+
+    <div class="min-w-0">
+      <div class="mb-1.5 flex flex-wrap items-center gap-1.5">
+        <label class="chip"><input type="radio" name="lp-view" value="response" checked class="sr-only" />{L.response}</label>
+        <label class="chip"><input type="radio" name="lp-view" value="raw" class="sr-only" />{L.raw}</label>
+        <label class="chip"><input type="radio" name="lp-view" value="curl" class="sr-only" />{L.curl}</label>
+        <button type="button" class="btn ml-auto px-2 py-1 text-xs" data-copy="#lp-out">{t('common.copy')}</button>
+      </div>
+      <p id="lp-err" class="mb-2 error-box" hidden></p>
+      <pre id="lp-out" class="code field min-h-72 overflow-auto whitespace-pre-wrap"></pre>
+      <dl id="lp-metrics" class="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-zinc-500"></dl>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { buildRequest, parseResponse, toCurl, type ApiKind, type BuiltRequest, type Preset } from '../../lib/llm-request';
+  import { parseStream } from '../../lib/sse';
+
+  const root = document.getElementById('lp')!;
+  const L = JSON.parse(root.dataset.l!);
+  const presets: Preset[] = JSON.parse(root.dataset.presets!);
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const out = $('lp-out');
+  const err = $('lp-err');
+  const KEY = 'codes.llm-playground.key';
+
+  let kind: ApiKind = 'openai';
+  let view = { response: '', raw: '', curl: '' };
+  let controller: AbortController | null = null;
+
+  function applyPreset() {
+    const p = presets.find((x) => x.id === $<HTMLSelectElement>('lp-preset').value)!;
+    kind = p.kind;
+    if (p.id !== 'custom') {
+      $<HTMLInputElement>('lp-base').value = p.baseUrl;
+      $<HTMLInputElement>('lp-model').value = p.model;
+    }
+  }
+
+  const currentView = () => (root.querySelector('input[name="lp-view"]:checked') as HTMLInputElement).value as keyof typeof view;
+  const paint = () => (out.textContent = view[currentView()]);
+
+  function metrics(items: [string, string][]) {
+    $('lp-metrics').replaceChildren(
+      ...items.map(([k, v]) => {
+        const d = document.createElement('div');
+        d.textContent = `${k}: ${v}`;
+        return d;
+      }),
+    );
+  }
+
+  function parseJsonField(id: string, label: string) {
+    const v = $<HTMLTextAreaElement>(id).value.trim();
+    if (!v) return undefined;
+    try {
+      return JSON.parse(v);
+    } catch {
+      throw new Error(`${label} ${L.badJson}`);
+    }
+  }
+
+  function request(): BuiltRequest {
+    return buildRequest({
+      kind,
+      baseUrl: $<HTMLInputElement>('lp-base').value.trim(),
+      apiKey: $<HTMLInputElement>('lp-key').value.trim(),
+      model: $<HTMLInputElement>('lp-model').value.trim(),
+      system: $<HTMLTextAreaElement>('lp-system').value.trim() || undefined,
+      user: $<HTMLTextAreaElement>('lp-user').value,
+      temperature: Number($<HTMLInputElement>('lp-temp').value),
+      maxTokens: Number($<HTMLInputElement>('lp-max').value) || undefined,
+      stream: $<HTMLInputElement>('lp-stream').checked,
+      tools: parseJsonField('lp-tools', L.tools),
+      jsonSchema: parseJsonField('lp-schema', L.schema),
+    });
+  }
+
+  function updateCurl() {
+    try {
+      view.curl = toCurl(request());
+    } catch (e) {
+      view.curl = (e as Error).message;
+    }
+    if (currentView() === 'curl') paint();
+  }
+
+  function formatResult(text: string, toolCalls: { name: string; arguments: string }[]) {
+    let s = text;
+    if (toolCalls.length) s += `${s ? '\n\n' : ''}── ${L.toolCalls} ──\n` + toolCalls.map((c) => `${c.name}(${c.arguments})`).join('\n');
+    return s;
+  }
+
+  async function send() {
+    err.hidden = true;
+    let req: BuiltRequest;
+    try {
+      req = request();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+      return;
+    }
+    if ($<HTMLInputElement>('lp-remember').checked) {
+      try {
+        sessionStorage.setItem(KEY, $<HTMLInputElement>('lp-key').value);
+      } catch {
+        /* ignore */
+      }
+    }
+    controller = new AbortController();
+    $<HTMLButtonElement>('lp-send').disabled = true;
+    $<HTMLButtonElement>('lp-stop').disabled = false;
+    view = { response: '', raw: '', curl: toCurl(req) };
+    paint();
+    const t0 = performance.now();
+    let ttft = 0;
+    let status = 0;
+    try {
+      const res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: controller.signal });
+      status = res.status;
+      const streaming = req.body.stream && res.ok && res.body && /event-stream|ndjson/.test(res.headers.get('content-type') ?? '');
+      if (streaming) {
+        const reader = res.body!.getReader();
+        const dec = new TextDecoder();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!ttft) ttft = performance.now() - t0;
+          view.raw += dec.decode(value, { stream: true });
+          const r = parseStream(view.raw);
+          view.response = formatResult(r.text, r.toolCalls.map((c) => ({ name: c.name, arguments: c.arguments })));
+          paint();
+          metrics([
+            [L.status, String(status)],
+            [L.ttft, `${Math.round(ttft)} ms`],
+          ]);
+        }
+        const r = parseStream(view.raw);
+        if (r.errors.length) throw new Error(r.errors.join('; '));
+        metrics([
+          [L.status, String(status)],
+          [L.ttft, `${Math.round(ttft)} ms`],
+          [L.total, `${Math.round(performance.now() - t0)} ms`],
+          ...(r.finishReason ? [[L.finish, r.finishReason] as [string, string]] : []),
+          ...(r.usage ? [[L.usage, JSON.stringify(r.usage)] as [string, string]] : []),
+        ]);
+      } else {
+        const text = await res.text();
+        view.raw = text;
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`HTTP ${status}: ${text.slice(0, 300)}`);
+        }
+        const p = parseResponse(kind, data);
+        if (!res.ok) throw new Error(`HTTP ${status}`);
+        view.response = formatResult(p.text, p.toolCalls);
+        try {
+          view.raw = JSON.stringify(data, null, 2);
+        } catch {
+          /* keep text */
+        }
+        metrics([
+          [L.status, String(status)],
+          [L.total, `${Math.round(performance.now() - t0)} ms`],
+          ...(p.finishReason ? [[L.finish, p.finishReason] as [string, string]] : []),
+          ...(p.usage ? [[L.usage, JSON.stringify(p.usage)] as [string, string]] : []),
+        ]);
+      }
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        err.hidden = false;
+        err.textContent = e instanceof TypeError ? L.cors : (e as Error).message;
+      }
+    } finally {
+      paint();
+      controller = null;
+      $<HTMLButtonElement>('lp-send').disabled = false;
+      $<HTMLButtonElement>('lp-stop').disabled = true;
+    }
+  }
+
+  $('lp-preset').addEventListener('change', () => {
+    applyPreset();
+    updateCurl();
+  });
+  $('lp-temp').addEventListener('input', () => ($('lp-temp-v').textContent = $<HTMLInputElement>('lp-temp').value));
+  root.addEventListener('input', (e) => {
+    if ((e.target as HTMLElement).id !== 'lp-key') updateCurl();
+  });
+  root.addEventListener('change', (e) => {
+    const el = e.target as HTMLInputElement;
+    if (el.name === 'lp-view') paint();
+    if (el.id === 'lp-remember' && !el.checked) {
+      try {
+        sessionStorage.removeItem(KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+  $('lp-send').addEventListener('click', send);
+  $('lp-stop').addEventListener('click', () => controller?.abort());
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  try {
+    const saved = sessionStorage.getItem(KEY);
+    if (saved) {
+      $<HTMLInputElement>('lp-key').value = saved;
+      $<HTMLInputElement>('lp-remember').checked = true;
+    }
+  } catch {
+    /* ignore */
+  }
+  applyPreset();
+  updateCurl();
+</script>

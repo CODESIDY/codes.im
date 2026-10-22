@@ -1,0 +1,150 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { now: 'Current Unix time', seconds: 'seconds', ms: 'milliseconds', toDate: 'Timestamp → Date', toTs: 'Date → Timestamp', placeholder: 'e.g. 1735689600 or 1735689600000', detected: 'Detected unit', local: 'Local', utc: 'UTC', iso: 'ISO 8601', relative: 'Relative', invalid: 'Not a valid timestamp', pause: 'Pause', resume: 'Resume', useNow: 'Now', units: { s: 'seconds', ms: 'milliseconds', us: 'microseconds', ns: 'nanoseconds' } },
+  zh: { now: '当前 Unix 时间', seconds: '秒', ms: '毫秒', toDate: '时间戳 → 日期', toTs: '日期 → 时间戳', placeholder: '例如 1735689600 或 1735689600000', detected: '识别单位', local: '本地时间', utc: 'UTC', iso: 'ISO 8601', relative: '相对时间', invalid: '不是有效的时间戳', pause: '暂停', resume: '继续', useNow: '现在', units: { s: '秒', ms: '毫秒', us: '微秒', ns: '纳秒' } },
+}[lang];
+---
+
+<div id="ts" data-l={JSON.stringify(L)}>
+  <div class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg bg-zinc-50 px-4 py-3 dark:bg-zinc-800/50">
+    <span class="text-xs font-medium tracking-wide text-zinc-500 uppercase">{L.now}</span>
+    <button type="button" id="ts-now-s" class="cursor-pointer font-mono text-2xl font-semibold text-zinc-900 tabular-nums hover:text-brand-600 dark:text-zinc-50" data-copy="#ts-now-s"
+    ></button>
+    <span class="text-xs text-zinc-500">{L.seconds}</span>
+    <button type="button" id="ts-now-ms" class="cursor-pointer font-mono text-sm text-zinc-500 tabular-nums hover:text-brand-600" data-copy="#ts-now-ms"></button>
+    <button type="button" id="ts-pause" class="btn ml-auto px-2 py-1 text-xs">{L.pause}</button>
+  </div>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-2">
+    <section>
+      <h3 class="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.toDate}</h3>
+      <input id="ts-in" class="field font-mono" inputmode="numeric" placeholder={L.placeholder} />
+      <p id="ts-err" class="mt-2 error-box" hidden>{L.invalid}</p>
+      <dl id="ts-out" class="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800"></dl>
+    </section>
+    <section>
+      <h3 class="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.toTs}</h3>
+      <div class="flex gap-2">
+        <input id="ts-date" type="datetime-local" step="1" class="field font-mono" />
+        <button type="button" id="ts-date-now" class="btn">{L.useNow}</button>
+      </div>
+      <dl id="ts-out2" class="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800"></dl>
+    </section>
+  </div>
+  <template id="ts-row">
+    <div class="flex items-center gap-3 px-3 py-2">
+      <dt class="w-28 shrink-0 text-xs text-zinc-500"></dt>
+      <dd class="min-w-0 flex-1 truncate font-mono text-[13px] text-zinc-900 dark:text-zinc-100"></dd>
+      <button type="button" class="btn px-2 py-0.5 text-xs">{t('common.copy')}</button>
+    </div>
+  </template>
+</div>
+
+<script>
+  import { detectUnit, relativeTime, toLocalInput, toMillis } from '../../lib/time';
+
+  const root = document.getElementById('ts')!;
+  const L = JSON.parse(root.dataset.l!);
+  const locale = document.documentElement.lang;
+  const nowS = document.getElementById('ts-now-s')!;
+  const nowMs = document.getElementById('ts-now-ms')!;
+  const pause = document.getElementById('ts-pause')!;
+  const input = document.getElementById('ts-in') as HTMLInputElement;
+  const err = document.getElementById('ts-err')!;
+  const out = document.getElementById('ts-out')!;
+  const date = document.getElementById('ts-date') as HTMLInputElement;
+  const out2 = document.getElementById('ts-out2')!;
+  const tpl = document.getElementById('ts-row') as HTMLTemplateElement;
+
+  function rows(target: HTMLElement, items: [string, string][]) {
+    target.replaceChildren(
+      ...items.map(([k, v]) => {
+        const row = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+        row.querySelector('dt')!.textContent = k;
+        row.querySelector('dd')!.textContent = v;
+        row.querySelector('button')!.dataset.copyText = v;
+        return row;
+      }),
+    );
+  }
+
+  let paused = false;
+  function tick() {
+    if (paused) return;
+    const n = Date.now();
+    nowS.textContent = String(Math.floor(n / 1000));
+    nowMs.textContent = String(n);
+  }
+  tick();
+  setInterval(tick, 1000);
+  pause.addEventListener('click', () => {
+    paused = !paused;
+    pause.textContent = paused ? L.resume : L.pause;
+    tick();
+  });
+
+  function fmtLocal(d: Date) {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'full',
+      timeStyle: 'long',
+    }).format(d);
+  }
+
+  function convert() {
+    const raw = input.value.trim();
+    err.hidden = true;
+    if (!raw) {
+      out.replaceChildren();
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      err.hidden = false;
+      out.replaceChildren();
+      return;
+    }
+    const unit = detectUnit(n);
+    const d = new Date(toMillis(n, unit));
+    if (Number.isNaN(d.getTime())) {
+      err.hidden = false;
+      out.replaceChildren();
+      return;
+    }
+    rows(out, [
+      [L.detected, L.units[unit]],
+      [L.local, fmtLocal(d)],
+      [L.utc, d.toUTCString()],
+      [L.iso, d.toISOString()],
+      [L.relative, relativeTime(d.getTime(), Date.now(), locale)],
+    ]);
+  }
+
+  function reverse() {
+    if (!date.value) return;
+    const d = new Date(date.value);
+    if (Number.isNaN(d.getTime())) return;
+    rows(out2, [
+      [L.seconds, String(Math.floor(d.getTime() / 1000))],
+      [L.ms, String(d.getTime())],
+      [L.iso, d.toISOString()],
+    ]);
+  }
+
+  input.addEventListener('input', convert);
+  date.addEventListener('input', reverse);
+  document.getElementById('ts-date-now')!.addEventListener('click', () => {
+    date.value = toLocalInput(new Date());
+    reverse();
+  });
+
+  input.value = String(Math.floor(Date.now() / 1000));
+  convert();
+  date.value = toLocalInput(new Date());
+  reverse();
+</script>

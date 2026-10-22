@@ -1,0 +1,202 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { spec: 'OpenAPI / Swagger (JSON or YAML)', open: 'Open file', format: 'Output', ops: 'Endpoints', all: 'All', none: 'None', tools: 'tools', invalid: 'Could not parse the spec' },
+  zh: { spec: 'OpenAPI / Swagger（JSON 或 YAML）', open: '打开文件', format: '输出格式', ops: '接口', all: '全选', none: '全不选', tools: '个工具', invalid: '无法解析文档' },
+}[lang];
+const sample = `openapi: 3.0.3
+info:
+  title: Todo API
+  version: 1.0.0
+paths:
+  /todos:
+    get:
+      operationId: listTodos
+      summary: List todos, optionally filtered by status
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, done] }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+    post:
+      operationId: createTodo
+      summary: Create a new todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewTodo' }
+  /todos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Todo ID
+    delete:
+      operationId: deleteTodo
+      summary: Delete a todo
+components:
+  schemas:
+    NewTodo:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, description: Short task description }
+        due: { type: string, format: date }
+        tags: { type: array, items: { type: string } }
+`;
+---
+
+<div id="oa" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="oa-in">{L.spec}</label>
+        <span class="flex gap-2">
+          <label class="btn px-2 py-0.5 text-xs">{L.open}<input type="file" id="oa-file" accept=".json,.yaml,.yml" class="sr-only" /></label>
+          <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+        </span>
+      </div>
+      <textarea id="oa-in" class="field min-h-80" spellcheck="false"></textarea>
+      <p id="oa-err" class="mt-2 error-box" hidden></p>
+      <div class="mt-4 mb-2 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{L.ops}</h3>
+        <span class="flex gap-2 text-xs">
+          <button type="button" class="cursor-pointer text-brand-600 hover:underline dark:text-brand-400" data-act="all">{L.all}</button>
+          <button type="button" class="cursor-pointer text-zinc-500 hover:underline" data-act="none">{L.none}</button>
+        </span>
+      </div>
+      <ul id="oa-ops" class="max-h-72 divide-y divide-zinc-200 overflow-auto rounded-lg border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800"></ul>
+    </div>
+    <div>
+      <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span class="flex flex-wrap items-center gap-1">
+          <span class="mr-1 text-xs text-zinc-500">{L.format}</span>
+          <label class="chip"><input type="radio" name="oa-fmt" value="openai" checked class="sr-only" />OpenAI</label>
+          <label class="chip"><input type="radio" name="oa-fmt" value="openai-responses" class="sr-only" />OpenAI Responses</label>
+          <label class="chip"><input type="radio" name="oa-fmt" value="anthropic" class="sr-only" />Anthropic</label>
+          <label class="chip"><input type="radio" name="oa-fmt" value="mcp" class="sr-only" />MCP</label>
+        </span>
+        <span class="flex items-center gap-2">
+          <span id="oa-count" class="font-mono text-xs text-zinc-500"></span>
+          <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#oa-out">{t('common.copy')}</button>
+        </span>
+      </div>
+      <textarea id="oa-out" class="field min-h-[34rem]" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { parse as parseYaml } from 'yaml';
+  import { parseOperations, toTools, type Operation, type ToolFormat } from '../../lib/openapi-tools';
+
+  const root = document.getElementById('oa')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('oa-in') as HTMLTextAreaElement;
+  const out = document.getElementById('oa-out') as HTMLTextAreaElement;
+  const opsEl = document.getElementById('oa-ops')!;
+  const err = document.getElementById('oa-err')!;
+  const count = document.getElementById('oa-count')!;
+  let ops: Operation[] = [];
+  const off = new Set<string>();
+
+  const METHOD_COLORS: Record<string, string> = {
+    GET: 'text-sky-600 dark:text-sky-400',
+    POST: 'text-green-600 dark:text-green-400',
+    PUT: 'text-amber-600 dark:text-amber-400',
+    PATCH: 'text-violet-600 dark:text-violet-400',
+    DELETE: 'text-red-600 dark:text-red-400',
+  };
+
+  function parse() {
+    err.hidden = true;
+    ops = [];
+    if (input.value.trim()) {
+      try {
+        const text = input.value.trim();
+        const spec = text.startsWith('{') ? JSON.parse(text) : parseYaml(text);
+        ops = parseOperations(spec);
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = `${L.invalid}: ${(e as Error).message.split('\n')[0]}`;
+      }
+    }
+    opsEl.replaceChildren(
+      ...ops.map((o) => {
+        const li = document.createElement('li');
+        const label = document.createElement('label');
+        label.className = 'flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !off.has(o.name);
+        cb.className = 'mt-1 accent-brand-600';
+        cb.addEventListener('change', () => {
+          if (cb.checked) off.delete(o.name);
+          else off.add(o.name);
+          render();
+        });
+        const body = document.createElement('span');
+        body.className = 'min-w-0';
+        const top = document.createElement('span');
+        top.className = 'block font-mono text-xs';
+        top.innerHTML = `<b class="${METHOD_COLORS[o.method] ?? ''}">${o.method}</b> `;
+        top.append(o.path);
+        const nm = document.createElement('span');
+        nm.className = 'block truncate text-xs text-zinc-500';
+        nm.textContent = `${o.name} — ${o.description.split('\n')[0]}`;
+        body.append(top, nm);
+        label.append(cb, body);
+        li.append(label);
+        return li;
+      }),
+    );
+    render();
+  }
+
+  function render() {
+    const fmt = (root.querySelector('input[name="oa-fmt"]:checked') as HTMLInputElement).value as ToolFormat;
+    const selected = ops.filter((o) => !off.has(o.name));
+    out.value = ops.length ? JSON.stringify(toTools(selected, fmt), null, 2) : '';
+    count.textContent = ops.length ? `${selected.length} ${L.tools}` : '';
+  }
+
+  let timer = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(parse, 200);
+  });
+  root.addEventListener('change', (e) => {
+    if ((e.target as HTMLInputElement).name === 'oa-fmt') render();
+  });
+  (document.getElementById('oa-file') as HTMLInputElement).addEventListener('change', async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    input.value = await f.text();
+    (e.target as HTMLInputElement).value = '';
+    off.clear();
+    parse();
+  });
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'clear') {
+      input.value = '';
+      off.clear();
+      parse();
+    } else if (act === 'all' || act === 'none') {
+      off.clear();
+      if (act === 'none') ops.forEach((o) => off.add(o.name));
+      parse();
+    }
+  });
+  input.value = root.dataset.sample!;
+  parse();
+</script>

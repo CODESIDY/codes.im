@@ -1,0 +1,90 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { langs, useTranslations, type Lang } from '../../../i18n/ui';
+import { httpStatuses, statusClass } from '../../../data/http-status';
+import { inlineCode } from '../../../lib/inline';
+
+export function getStaticPaths() {
+  return langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const zh = lang === 'zh';
+const t = useTranslations(lang);
+const title = zh ? 'HTTP 状态码大全：含义、常见原因与解决方法' : 'HTTP Status Codes: Meanings, Causes and Fixes';
+const description = zh
+  ? `${httpStatuses.length} 个常见 HTTP 状态码速查，包括 200、301、302、304、400、401、403、404、429、500、502、503、504，以及 nginx 499 和 Cloudflare 52x，附排查方法。`
+  : `Quick reference for ${httpStatuses.length} HTTP status codes — 200, 301, 302, 304, 400, 401, 403, 404, 429, 500, 502, 503, 504, plus nginx 499 and Cloudflare 52x — with causes and fixes.`;
+const groups = [1, 2, 3, 4, 5].map((c) => ({ c, info: statusClass[c][lang], list: httpStatuses.filter((s) => Math.floor(s.code / 100) === c) }));
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: title,
+    description,
+    url: `https://codes.im/${lang}/http-status/`,
+    inLanguage: zh ? 'zh-CN' : 'en',
+  },
+];
+---
+
+<Layout lang={lang} title={title} description={description} jsonLd={jsonLd}>
+  <nav class="mb-4 text-xs text-zinc-500" aria-label="breadcrumb">
+    <a href={`/${lang}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{t('nav.tools')}</a>
+    <span class="mx-1.5">/</span>
+    <span>{zh ? 'HTTP 状态码' : 'HTTP status codes'}</span>
+  </nav>
+  <h1 class="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-50">{title}</h1>
+  <p class="mt-3 max-w-3xl text-sm leading-7 text-zinc-600 dark:text-zinc-400">
+    {
+      zh
+        ? '状态码是服务器对每个 HTTP 请求的三位数回复，第一位数字表示类别。点击任意状态码查看详细说明、常见原因和排查方法。'
+        : 'A status code is the server’s three-digit answer to every HTTP request; the first digit gives the class. Open any code for details, common causes and how to fix it.'
+    }
+  </p>
+
+  <input id="hs-filter" type="search" class="field mt-5 max-w-md" placeholder={zh ? '搜索状态码或关键词，如 404、超时、限流…' : 'Filter by code or keyword, e.g. 404, timeout, rate limit…'} autocomplete="off" />
+
+  <div class="mt-6 space-y-8">
+    {
+      groups.map((g) => (
+        <section data-hs-group>
+          <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{g.info.name}</h2>
+          <p class="mt-0.5 text-sm text-zinc-500">{g.info.desc}</p>
+          <ul class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {g.list.map((s) => (
+              <li data-hs={`${s.code} ${s.name} ${s.text[lang].summary} ${s.text[lang].details}`.toLowerCase()}>
+                <a href={`/${lang}/http-status/${s.code}/`} class="card flex h-full gap-3 p-3 transition hover:border-brand-400 dark:hover:border-brand-500/60">
+                  <span
+                    class:list={[
+                      'font-mono text-lg font-semibold',
+                      g.c === 2 ? 'text-emerald-600 dark:text-emerald-400' : g.c === 3 ? 'text-sky-600 dark:text-sky-400' : g.c === 4 ? 'text-amber-600 dark:text-amber-400' : g.c === 5 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500',
+                    ]}
+                  >
+                    {s.code}
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      {s.name}
+                      {s.unofficial && <span class="ml-1 text-xs font-normal text-zinc-400">({s.unofficial})</span>}
+                    </span>
+                    <span class="mt-0.5 line-clamp-2 block text-xs leading-5 text-zinc-500" set:html={inlineCode(s.text[lang].summary)} />
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))
+    }
+  </div>
+</Layout>
+
+<script>
+  const input = document.getElementById('hs-filter') as HTMLInputElement;
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    document.querySelectorAll<HTMLElement>('[data-hs]').forEach((li) => (li.hidden = !!q && !li.dataset.hs!.includes(q)));
+    document.querySelectorAll<HTMLElement>('[data-hs-group]').forEach((g) => (g.hidden = !g.querySelector('[data-hs]:not([hidden])')));
+  });
+</script>

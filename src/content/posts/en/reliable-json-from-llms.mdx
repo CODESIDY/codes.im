@@ -1,0 +1,132 @@
+---
+title: 'Getting Reliable JSON from LLMs: 5 Layers from Prompting to Structured Outputs'
+description: Trailing commas, missing brackets, wrong fields? Here is how prompting, JSON mode, structured outputs, schema validation and automatic repair fit together — from least to most reliable.
+date: 2026-10-22
+category: ai
+kind: tutorial
+featured: true
+cover: ../images/reliable-json.png
+coverAlt: Illustration of a valid JSON snippet
+tags: [llm, json, structured-output]
+tools: [json-schema-generator, json-repair, json-to-zod]
+---
+
+import Callout from '../../../components/content/Callout.astro';
+import ToolEmbed from '../../../components/content/ToolEmbed.astro';
+
+Asking a model to "return JSON" is easy. Getting JSON your code can parse — with every field present — **every single time** is not. These are the failures you will meet in production:
+
+- the reply is wrapped in a ```` ```json ```` fence plus "Sure, here's the result";
+- trailing commas, single-quoted keys, or Python's `True` / `None`;
+- `max_tokens` runs out and the JSON stops halfway;
+- the syntax is fine, but a field is missing or has the wrong type.
+
+This post walks through five layers, from least to most reliable. In real projects you **combine** them rather than pick one.
+
+## 1. Spell out the format in the prompt
+
+The most basic layer: state the output format and show an example.
+
+```text
+Extract the information from the meeting notes below.
+Output a single JSON object only — no explanation, no Markdown code fences.
+Use this shape:
+{"title": "string", "action_items": [{"owner": "string", "task": "string"}]}
+```
+
+It costs nothing, but it is only a request — the model can still ignore it. Fine for prototypes, not enough for production.
+
+## 2. Turn on JSON mode
+
+Many APIs offer a "JSON mode" that guarantees **syntactically valid** JSON, for example OpenAI Chat Completions:
+
+```json
+{ "response_format": { "type": "json_object" } }
+```
+
+That fixes syntax but **not structure**: field names, types and required keys can still differ from what you expect.
+
+## 3. Use structured outputs
+
+The more reliable approach is to hand the API a JSON Schema so generation itself is constrained by it.
+
+**OpenAI** — use `json_schema` in `response_format` with `strict` enabled:
+
+```json
+{
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "meeting_notes",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "due": { "type": ["string", "null"] }
+        },
+        "required": ["title", "due"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+```
+
+Strict mode has two rules worth remembering: **every property must be listed in `required`** (express optional values as a union with `null`), and every object needs `additionalProperties: false`.
+
+**Anthropic Claude** — define a tool whose `input_schema` describes the shape you want, then force it with `tool_choice: {"type": "tool", "name": "..."}`. The `input` of the returned `tool_use` block is your structured data.
+
+**Google Gemini** — set `responseMimeType: "application/json"` and a `responseSchema` in `generationConfig`.
+
+<Callout type="tip" title="Don't want to write the schema by hand?">
+  Paste an example of the JSON you expect into the [JSON Schema Generator](/en/json-schema-generator/), turn on Strict, and copy a ready-made OpenAI `response_format` or Anthropic tool definition.
+</Callout>
+
+## 4. Validate in code
+
+Even with structured outputs, validate again in your application: the model may refuse, be stopped by a safety filter or get truncated, and business rules often go beyond what a schema can express (for example, "the date must be in the future").
+
+In TypeScript, Zod works well:
+
+```ts
+import { z } from 'zod';
+
+const MeetingNotes = z.object({
+  title: z.string(),
+  action_items: z.array(z.object({ owner: z.string(), task: z.string() })),
+});
+
+const result = MeetingNotes.safeParse(JSON.parse(text));
+if (!result.success) {
+  // Send result.error back to the model and ask it to correct its output
+}
+```
+
+When validation fails, a very effective strategy is to **send the error together with the original output back to the model and ask for a fix**. One or two retries are usually enough.
+
+<Callout type="note">
+  [JSON to Zod](/en/json-to-zod/) generates a schema like the one above — plus its TypeScript type — from a sample JSON.
+</Callout>
+
+## 5. Repair automatically, as the last safety net
+
+For models without structured outputs (many open-weight models and proxies), or for broken JSON already sitting in your logs, try an automatic repair when parsing fails: strip fences and chatter, add missing quotes and commas, convert `True` / `None`, and close truncated brackets.
+
+Here is a live repair tool. The sample contains most of the problems listed above:
+
+<ToolEmbed slug="json-repair" lang="en" />
+
+<Callout type="warning" title="Repair is not magic">
+  Truncated content can't be recovered — repair makes the JSON valid, not complete. When output is cut off, check the stop reason first (OpenAI's `finish_reason: "length"`, Anthropic's `stop_reason: "max_tokens"`) and raise the token limit.
+</Callout>
+
+## Recommended combinations
+
+| Situation | Recommended approach |
+| --- | --- |
+| Prototypes, one-off scripts | Layer 1 + layer 5 |
+| Production with structured outputs | Layer 3 + layer 4 (retry with the error on failure) |
+| Open-weight models / no structured outputs | Layers 1–2 + layer 4 + layer 5 |
+
+The core idea: **let the API constrain the format during generation, validate in code, and keep repair as a fallback.**

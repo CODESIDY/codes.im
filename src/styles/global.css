@@ -1,0 +1,130 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-brand-50: oklch(0.97 0.02 165);
+  --color-brand-100: oklch(0.94 0.05 165);
+  --color-brand-400: oklch(0.78 0.14 165);
+  --color-brand-500: oklch(0.70 0.15 165);
+  --color-brand-600: oklch(0.60 0.13 165);
+  --color-brand-700: oklch(0.50 0.11 165);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200;
+  }
+  ::selection {
+    @apply bg-brand-400/40;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400;
+  }
+  .field {
+    @apply w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition
+      placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
+      dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600;
+  }
+  .code {
+    @apply font-mono text-[13px] leading-relaxed;
+  }
+  textarea.field {
+    @apply min-h-48 resize-y font-mono text-[13px] leading-relaxed;
+  }
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 transition
+      hover:border-zinc-400 hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50
+      dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800;
+  }
+  .btn-primary {
+    @apply border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700
+      dark:border-brand-500 dark:bg-brand-500 dark:text-zinc-950 dark:hover:border-brand-400 dark:hover:bg-brand-400;
+  }
+  .chip {
+    @apply inline-flex cursor-pointer select-none items-center gap-1.5 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600
+      has-checked:border-brand-500 has-checked:bg-brand-50 has-checked:text-brand-700
+      dark:border-zinc-700 dark:text-zinc-400 dark:has-checked:bg-brand-500/10 dark:has-checked:text-brand-400;
+  }
+  .error-box {
+    @apply rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300;
+  }
+  .ok-box {
+    @apply rounded-lg border border-brand-400/50 bg-brand-50 px-3 py-2 text-sm text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400;
+  }
+  .kbd {
+    @apply rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400;
+  }
+  .prose-tool h2 {
+    @apply mt-10 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100;
+  }
+  .prose-tool p,
+  .prose-tool li {
+    @apply text-sm leading-7 text-zinc-600 dark:text-zinc-400;
+  }
+  .prose-tool code {
+    @apply rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12px] text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200;
+  }
+  .prose-tool pre code {
+    @apply rounded-none bg-transparent p-0 text-inherit dark:bg-transparent;
+  }
+}
+
+input[type='search']::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* Let grid columns inside tool widgets shrink so wide <pre> blocks scroll instead of overflowing. */
+.card .grid > * {
+  min-width: 0;
+}
+
+/* ---------- Articles ---------- */
+
+/* Shiki emits both themes as CSS variables (see astro.config.mjs). */
+pre.astro-code {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+  border: 1px solid var(--color-zinc-200);
+  border-radius: 0.6rem;
+  padding: 0.9rem 1rem;
+  font-size: 13px;
+  line-height: 1.65;
+}
+pre.astro-code span {
+  color: var(--shiki-light);
+}
+.dark pre.astro-code {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+  border-color: var(--color-zinc-800);
+}
+.dark pre.astro-code span {
+  color: var(--shiki-dark);
+}
+
+.article {
+  @apply prose prose-zinc max-w-none dark:prose-invert
+    prose-headings:scroll-mt-20 prose-headings:font-semibold prose-headings:tracking-tight
+    prose-a:text-brand-700 prose-a:underline-offset-2 hover:prose-a:text-brand-600 dark:prose-a:text-brand-400
+    prose-code:rounded prose-code:bg-zinc-100 prose-code:px-1 prose-code:py-0.5 prose-code:font-normal
+    prose-code:before:content-none prose-code:after:content-none dark:prose-code:bg-zinc-800
+    prose-img:rounded-xl;
+}
+.article pre code {
+  background: transparent !important;
+  padding: 0 !important;
+}

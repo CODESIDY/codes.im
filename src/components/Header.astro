@@ -1,0 +1,135 @@
+---
+import { config } from '../config';
+import { localizePath, otherLang, useTranslations, type Lang } from '../i18n/ui';
+import { tools } from '../tools/registry';
+import { getPosts, postUrl } from '../lib/posts';
+import { httpStatuses } from '../data/http-status';
+
+interface Props {
+  lang: Lang;
+  /** Where the language switch points; falls back to the other language's blog index. */
+  switchHref?: string;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const switchHref = Astro.props.switchHref ?? (Astro.url.pathname.includes('/blog/') ? `/${otherLang(lang)}/blog/` : localizePath(Astro.url.pathname, otherLang(lang)));
+const path = Astro.url.pathname;
+const navLink = (active: boolean) =>
+  `hidden rounded-md px-2.5 py-1.5 sm:block hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${
+    active ? 'text-zinc-900 dark:text-zinc-100 font-medium' : 'text-zinc-600 dark:text-zinc-400'
+  }`;
+
+const index = tools.map((tool) => {
+  const tx = tool.text[lang];
+  const alt = tool.text[otherLang(lang)];
+  return {
+    name: tx.name,
+    description: tx.description,
+    keywords: [...tx.keywords, ...alt.keywords, alt.name, tool.slug].join(' ').toLowerCase(),
+    href: `/${lang}/${tool.slug}/`,
+    glyph: tool.glyph,
+    slug: tool.slug,
+    type: 'tool',
+  };
+});
+for (const st of httpStatuses) {
+  index.push({
+    name: `HTTP ${st.code} ${st.name}`,
+    description: st.text[lang].summary,
+    keywords: `${st.code} http status ${lang === 'zh' ? '状态码' : ''}`.toLowerCase(),
+    href: `/${lang}/http-status/${st.code}/`,
+    glyph: String(st.code),
+    slug: `http-${st.code}`,
+    type: 'ref',
+  });
+}
+for (const p of await getPosts(lang)) {
+  index.push({
+    name: p.data.title,
+    description: p.data.description,
+    keywords: [...p.data.tags, p.data.category].join(' ').toLowerCase(),
+    href: postUrl(p),
+    glyph: '✎',
+    slug: p.id,
+    type: 'post',
+  });
+}
+---
+
+<header
+  class="print:hidden sticky top-0 z-30 border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-zinc-950/80"
+>
+  <div class="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
+    <a href={`/${lang}/`} class="flex shrink-0 items-center gap-2 font-mono text-[15px] font-semibold tracking-tight">
+      <span class="grid h-7 w-7 place-items-center rounded-md bg-zinc-900 text-[12px] text-brand-400 dark:bg-zinc-100 dark:text-brand-700"
+        >&gt;_</span
+      >
+      <span class="hidden sm:inline">codes<span class="text-brand-600 dark:text-brand-400">.im</span></span>
+    </a>
+
+    <div id="tool-search-wrap" class="relative ml-auto w-full max-w-xs sm:ml-6">
+      <input
+        id="tool-search"
+        type="search"
+        autocomplete="off"
+        placeholder={t('search.placeholder')}
+        aria-label={t('search.placeholder')}
+        class="field h-9 pr-12"
+      />
+      <span class="kbd pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 sm:inline">⌘K</span>
+      <ul
+        id="tool-search-results"
+        hidden
+        data-empty={t('search.empty')}
+        data-tools={t('search.tools')}
+        data-posts={t('search.posts')}
+        data-refs={t('search.refs')}
+        data-recent={t('search.recent')}
+        class="card absolute top-11 right-0 left-0 max-h-96 overflow-auto p-1 shadow-lg"
+      >
+      </ul>
+      <script type="application/json" id="tool-index" set:html={JSON.stringify(index)} />
+    </div>
+
+    <nav class="flex items-center gap-1 text-sm sm:ml-auto">
+      <a href={`/${lang}/blog/`} class={navLink(path.includes('/blog'))}>{t('nav.blog')}</a>
+      <a href={`/${lang}/projects/`} class={navLink(path.includes('/projects'))}>{t('nav.projects')}</a>
+      <a href={`/${lang}/about/`} class={navLink(path.includes('/about'))}>{t('nav.about')}</a>
+      <a
+        href={switchHref}
+        hreflang={otherLang(lang) === 'zh' ? 'zh-CN' : 'en'}
+        class="rounded-md px-2.5 py-1.5 whitespace-nowrap text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+        >{t('lang.switch')}</a
+      >
+      <a
+        href={config.repo}
+        target="_blank"
+        rel="noopener"
+        aria-label="GitHub"
+        class="rounded-md p-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <svg viewBox="0 0 16 16" class="h-4 w-4" fill="currentColor" aria-hidden="true"
+          ><path
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+          ></path></svg
+        >
+      </a>
+      <button
+        type="button"
+        data-theme-toggle
+        aria-label={t('theme.toggle')}
+        title={t('theme.toggle')}
+        class="cursor-pointer rounded-md p-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <svg class="h-4 w-4 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+          ><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg
+        >
+        <svg class="hidden h-4 w-4 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+          ><circle cx="12" cy="12" r="4"></circle><path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+          ></path></svg
+        >
+      </button>
+    </nav>
+  </div>
+</header>

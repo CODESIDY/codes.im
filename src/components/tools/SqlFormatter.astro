@@ -1,0 +1,113 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { dialect: 'Dialect', keywords: 'Keywords', upper: 'UPPER', lower: 'lower', preserve: 'Preserve', indent: 'Indent' },
+  zh: { dialect: '方言', keywords: '关键字', upper: '大写', lower: '小写', preserve: '保持原样', indent: '缩进' },
+}[lang];
+const dialects = [
+  ['sql', 'Standard SQL'],
+  ['mysql', 'MySQL'],
+  ['mariadb', 'MariaDB'],
+  ['postgresql', 'PostgreSQL'],
+  ['sqlite', 'SQLite'],
+  ['tsql', 'SQL Server (T-SQL)'],
+  ['plsql', 'Oracle PL/SQL'],
+  ['bigquery', 'BigQuery'],
+  ['snowflake', 'Snowflake'],
+  ['clickhouse', 'ClickHouse'],
+  ['duckdb', 'DuckDB'],
+  ['redshift', 'Redshift'],
+  ['spark', 'Spark SQL'],
+  ['trino', 'Trino / Presto'],
+  ['tidb', 'TiDB'],
+];
+const sample =
+  "select u.id, u.name, count(o.id) as orders, sum(o.total) as revenue from users u left join orders o on o.user_id = u.id and o.status = 'paid' where u.created_at >= '2026-01-01' group by u.id, u.name having count(o.id) > 3 order by revenue desc limit 20;";
+---
+
+<div id="sqlf" data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.dialect}
+      <select id="sqlf-dialect" class="field h-8 w-auto py-0">
+        {dialects.map(([v, n]) => <option value={v}>{n}</option>)}
+      </select>
+    </label>
+    <span class="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.keywords}
+      <label class="chip"><input type="radio" name="sqlf-case" value="upper" checked class="sr-only" />{L.upper}</label>
+      <label class="chip"><input type="radio" name="sqlf-case" value="lower" class="sr-only" />{L.lower}</label>
+      <label class="chip"><input type="radio" name="sqlf-case" value="preserve" class="sr-only" />{L.preserve}</label>
+    </span>
+    <label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      {L.indent}
+      <select id="sqlf-indent" class="field h-8 w-auto py-0">
+        <option value="2">2</option>
+        <option value="4">4</option>
+      </select>
+    </label>
+    <span class="ml-auto flex gap-2">
+      <button type="button" class="btn" data-act="sample">{t('common.sample')}</button>
+      <button type="button" class="btn" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label mb-1.5 flex h-[22px] items-center" for="sqlf-in">{t('common.input')}</label>
+      <textarea id="sqlf-in" class="field min-h-96" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <label class="label mb-0" for="sqlf-out">{t('common.output')}</label>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#sqlf-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="sqlf-out" class="field min-h-96" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="sqlf-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { format, type SqlLanguage, type KeywordCase } from 'sql-formatter';
+
+  const root = document.getElementById('sqlf')!;
+  const input = document.getElementById('sqlf-in') as HTMLTextAreaElement;
+  const out = document.getElementById('sqlf-out') as HTMLTextAreaElement;
+  const dialect = document.getElementById('sqlf-dialect') as HTMLSelectElement;
+  const indent = document.getElementById('sqlf-indent') as HTMLSelectElement;
+  const err = document.getElementById('sqlf-err')!;
+
+  function run() {
+    err.hidden = true;
+    if (!input.value.trim()) {
+      out.value = '';
+      return;
+    }
+    try {
+      out.value = format(input.value, {
+        language: dialect.value as SqlLanguage,
+        keywordCase: (root.querySelector('input[name="sqlf-case"]:checked') as HTMLInputElement).value as KeywordCase,
+        tabWidth: Number(indent.value),
+      });
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message.split('\n')[0];
+    }
+  }
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'sample') input.value = root.dataset.sample!;
+    else if (act === 'clear') input.value = '';
+    else return;
+    run();
+  });
+  input.value = root.dataset.sample!;
+  run();
+</script>

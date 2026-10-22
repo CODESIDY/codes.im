@@ -1,0 +1,192 @@
+---
+import { render } from 'astro:content';
+import Layout from '../../../layouts/Layout.astro';
+import ToolCard from '../../../components/ToolCard.astro';
+import { config } from '../../../config';
+import { htmlLang, otherLang, useTranslations, type Lang } from '../../../i18n/ui';
+import { formatDate, getAllPosts, getPosts, postUrl, readingMinutes, splitId, tagSlug, type Post } from '../../../lib/posts';
+import { getTool } from '../../../tools/registry';
+import { getCategory } from '../../../data/categories';
+import { Image, getImage } from 'astro:assets';
+
+export async function getStaticPaths() {
+  const all = await getAllPosts();
+  return all.map((post) => {
+    const { lang, slug } = splitId(post.id);
+    return { params: { lang, slug }, props: { post } };
+  });
+}
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const { lang, slug } = splitId(post.id);
+const l = lang as Lang;
+const t = useTranslations(l);
+const d = post.data;
+const { Content, headings } = await render(post);
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+// Translation in the other language shares the same slug.
+const other = otherLang(l);
+const translation = (await getPosts(other)).find((p) => splitId(p.id).slug === slug);
+const alternates: Partial<Record<Lang, string>> = { [l]: postUrl(post) };
+if (translation) alternates[other] = postUrl(translation);
+
+// Prev / next and series within the same language.
+const siblings = await getPosts(l);
+const i = siblings.findIndex((p) => p.id === post.id);
+const newer = i > 0 ? siblings[i - 1] : undefined;
+const older = i < siblings.length - 1 ? siblings[i + 1] : undefined;
+const series = d.series ? siblings.filter((p) => p.data.series === d.series).reverse() : [];
+
+const tools = d.tools.map(getTool).filter((x) => x !== undefined);
+const cat = getCategory(d.category);
+const ogImage = d.cover ? await getImage({ src: d.cover, width: 1200, format: 'png' }) : undefined;
+const url = `https://codes.im${postUrl(post)}`;
+const editUrl = `${config.repo}/edit/main/${post.filePath ?? ''}`;
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': d.kind === 'tutorial' ? 'TechArticle' : 'BlogPosting',
+    headline: d.title,
+    description: d.description,
+    datePublished: d.date.toISOString(),
+    dateModified: (d.updated ?? d.date).toISOString(),
+    inLanguage: htmlLang[l],
+    url,
+    mainEntityOfPage: url,
+    author: { '@type': 'Person', name: config.author, url: config.github },
+    keywords: d.tags.join(', '),
+  },
+];
+---
+
+<Layout lang={l} title={d.title} description={d.description} jsonLd={jsonLd} alternates={alternates} ogType="article" ogImage={ogImage?.src}>
+  <div class="mx-auto grid max-w-5xl grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_220px]">
+    <article class="min-w-0">
+      <nav class="mb-6 text-xs text-zinc-500">
+        <a href={`/${l}/blog/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">← {t('blog.back')}</a>
+      </nav>
+      {d.draft && <p class="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{t('blog.draft')}</p>}
+      <header class="mb-8">
+        <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
+          {cat && <a href={`/${l}/blog/category/${cat.slug}/`} class="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium text-zinc-700 hover:border-brand-400 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-300">{cat.emoji} {cat[l]}</a>}
+          <time datetime={d.date.toISOString()}>{formatDate(d.date, l)}</time>
+          {d.updated && <span>· {t('blog.updated')} {formatDate(d.updated, l)}</span>}
+          <span>· {readingMinutes(post.body)} {t('blog.min')}</span>
+          {d.kind === 'tutorial' && <span class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-400">{t('blog.tutorial')}</span>}
+        </div>
+        <h1 class="text-3xl font-bold tracking-tight text-balance text-zinc-900 sm:text-4xl dark:text-zinc-50">{d.title}</h1>
+        <p class="mt-3 text-lg leading-8 text-zinc-600 dark:text-zinc-400">{d.description}</p>
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          {d.tags.map((tag) => <a href={`/${l}/blog/tags/${tagSlug(tag)}/`} class="font-mono text-xs text-zinc-500 hover:text-brand-600">#{tag}</a>)}
+          {translation && <a href={postUrl(translation)} hreflang={htmlLang[other]} class="ml-auto text-xs text-brand-700 hover:underline dark:text-brand-400">{t('blog.translation')} →</a>}
+        </div>
+      </header>
+
+      {
+        d.cover && (
+          <Image src={d.cover} alt={d.coverAlt ?? d.title} widths={[720, 1440]} sizes="(max-width: 768px) 100vw, 720px" loading="eager" class="mb-8 aspect-[1.91/1] w-full rounded-2xl border border-zinc-200 object-cover dark:border-zinc-800" />
+        )
+      }
+
+      {
+        series.length > 1 && (
+          <div class="card mb-8 p-4">
+            <p class="mb-2 text-xs font-medium tracking-wide text-zinc-500 uppercase">{t('blog.series')} · {d.series}</p>
+            <ol class="list-decimal space-y-1 pl-5 text-sm">
+              {series.map((p) => (
+                <li>
+                  {p.id === post.id ? <span class="font-medium text-zinc-900 dark:text-zinc-100">{p.data.title}</span> : <a href={postUrl(p)} class="text-brand-700 hover:underline dark:text-brand-400">{p.data.title}</a>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
+      }
+
+      <div class="article">
+        <Content />
+      </div>
+
+      {
+        tools.length > 0 && (
+          <section class="mt-12">
+            <h2 class="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('blog.tools')}</h2>
+            <div class="grid gap-3 sm:grid-cols-2">{tools.map((tool) => <ToolCard tool={tool} lang={l} />)}</div>
+          </section>
+        )
+      }
+
+      <footer class="mt-12 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <a href={editUrl} target="_blank" rel="noopener" class="text-sm text-zinc-500 hover:text-brand-600">✎ {t('blog.edit')}</a>
+        <nav class="mt-6 grid gap-3 sm:grid-cols-2">
+          {
+            newer ? (
+              <a href={postUrl(newer)} class="card p-4 hover:border-brand-400">
+                <span class="text-xs text-zinc-500">← {t('blog.prev')}</span>
+                <span class="mt-1 block font-medium text-zinc-900 dark:text-zinc-100">{newer.data.title}</span>
+              </a>
+            ) : <span />
+          }
+          {
+            older && (
+              <a href={postUrl(older)} class="card p-4 text-right hover:border-brand-400">
+                <span class="text-xs text-zinc-500">{t('blog.next')} →</span>
+                <span class="mt-1 block font-medium text-zinc-900 dark:text-zinc-100">{older.data.title}</span>
+              </a>
+            )
+          }
+        </nav>
+      </footer>
+    </article>
+
+    {
+      toc.length > 1 && (
+        <aside class="hidden lg:block">
+          <nav class="sticky top-24 text-sm" aria-label={t('blog.toc')}>
+            <p class="mb-3 text-xs font-semibold tracking-wide text-zinc-500 uppercase">{t('blog.toc')}</p>
+            <ul id="toc" class="space-y-2 border-l border-zinc-200 dark:border-zinc-800">
+              {toc.map((h) => (
+                <li>
+                  <a
+                    href={`#${h.slug}`}
+                    data-slug={h.slug}
+                    class={`-ml-px block border-l border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 ${h.depth === 3 ? 'pl-6' : 'pl-3'}`}
+                  >
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+      )
+    }
+  </div>
+</Layout>
+
+<script>
+  // Highlight the current section in the table of contents.
+  const links = new Map([...document.querySelectorAll<HTMLAnchorElement>('#toc a')].map((a) => [a.dataset.slug!, a]));
+  if (links.size) {
+    const active = ['!border-brand-500', '!text-brand-700', 'dark:!text-brand-400'];
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          links.forEach((a) => a.classList.remove(...active));
+          links.get(e.target.id)?.classList.add(...active);
+        }
+      },
+      { rootMargin: '-80px 0px -70% 0px' },
+    );
+    links.forEach((_a, id) => {
+      const el = document.getElementById(id);
+      if (el) obs.observe(el);
+    });
+  }
+</script>

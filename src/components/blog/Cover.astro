@@ -1,0 +1,59 @@
+---
+// Post cover: the optimised cover image if the post has one, otherwise a
+// generated gradient "card" based on the post's category and title.
+import { Image } from 'astro:assets';
+import type { Lang } from '../../i18n/ui';
+import { getCategory } from '../../data/categories';
+import type { Post } from '../../lib/posts';
+
+interface Props {
+  post: Post;
+  lang: Lang;
+  /** Rendered width hint for responsive images. */
+  width?: number;
+  class?: string;
+  /** Eager-load above-the-fold covers. */
+  eager?: boolean;
+  /** Show the category badge in the corner. */
+  badge?: boolean;
+}
+const { post, lang, width = 640, class: cls = '', eager = false, badge = true } = Astro.props;
+const d = post.data;
+const cat = getCategory(d.category);
+
+// Stable hue from the post id so every generated cover looks different but consistent.
+let h = 0;
+for (const ch of post.id) h = (h * 31 + ch.charCodeAt(0)) % 360;
+const hue2 = (h + 50) % 360;
+---
+
+<div class:list={['relative overflow-hidden bg-zinc-100 dark:bg-zinc-800', cls]}>
+  {
+    d.cover ? (
+      <Image
+        src={d.cover}
+        alt={d.coverAlt ?? d.title}
+        widths={[width, width * 2]}
+        sizes={`(max-width: 640px) 100vw, ${width}px`}
+        loading={eager ? 'eager' : 'lazy'}
+        class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+      />
+    ) : (
+      <div
+        class="relative grid h-full w-full place-items-center transition duration-500 group-hover:scale-[1.03] dark:brightness-[0.72]"
+        style={`background: radial-gradient(90% 120% at 100% 0%, oklch(0.78 0.13 ${h}), transparent 65%), radial-gradient(90% 120% at 0% 100%, oklch(0.72 0.12 ${hue2}), transparent 65%), oklch(0.9 0.04 ${h});`}
+        aria-hidden="true"
+      >
+        <div class="absolute inset-0 bg-[linear-gradient(to_right,rgb(255_255_255/0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/0.18)_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+        <span class="relative grid h-16 w-16 place-items-center rounded-2xl bg-white/70 text-3xl shadow-sm backdrop-blur dark:bg-zinc-900/60">{cat?.emoji}</span>
+      </div>
+    )
+  }
+  {
+    badge && cat && (
+      <span class="absolute top-2.5 left-2.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur">
+        {cat[lang]}
+      </span>
+    )
+  }
+</div>

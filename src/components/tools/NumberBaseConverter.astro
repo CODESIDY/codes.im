@@ -1,0 +1,127 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { bin: 'Binary (2)', oct: 'Octal (8)', dec: 'Decimal (10)', hex: 'Hexadecimal (16)', custom: 'Custom base', group: 'Group digits', upper: 'Uppercase hex', bits: 'bits', twos: 'Two’s complement', overflow: 'out of range' },
+  zh: { bin: '二进制 (2)', oct: '八进制 (8)', dec: '十进制 (10)', hex: '十六进制 (16)', custom: '自定义进制', group: '数字分组', upper: '十六进制大写', bits: '位', twos: '补码', overflow: '超出范围' },
+}[lang];
+const fields = [
+  ['bin', 2],
+  ['oct', 8],
+  ['dec', 10],
+  ['hex', 16],
+] as const;
+---
+
+<div id="nb" data-l={JSON.stringify(L)}>
+  <div class="mb-4 flex flex-wrap gap-1.5">
+    <label class="chip"><input type="checkbox" id="nb-group" class="sr-only" />{L.group}</label>
+    <label class="chip"><input type="checkbox" id="nb-upper" checked class="sr-only" />{L.upper}</label>
+  </div>
+  <div class="space-y-3">
+    {
+      fields.map(([k, base]) => (
+        <div class="grid items-center gap-2 sm:grid-cols-[160px_1fr_auto]">
+          <label class="text-sm font-medium text-zinc-600 dark:text-zinc-400" for={`nb-${k}`}>
+            {L[k]}
+          </label>
+          <input id={`nb-${k}`} data-base={base} class="field font-mono" spellcheck="false" autocomplete="off" />
+          <button type="button" class="btn px-2 py-1 text-xs" data-copy={`#nb-${k}`}>
+            {t('common.copy')}
+          </button>
+        </div>
+      ))
+    }
+    <div class="grid items-center gap-2 sm:grid-cols-[160px_1fr_auto]">
+      <span class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+        {L.custom}
+        <input id="nb-base" type="number" min="2" max="36" value="36" class="field h-8 w-16 py-0 font-mono" />
+      </span>
+      <input id="nb-custom" data-base="custom" class="field font-mono" spellcheck="false" autocomplete="off" />
+      <button type="button" class="btn px-2 py-1 text-xs" data-copy="#nb-custom">{t('common.copy')}</button>
+    </div>
+  </div>
+  <p id="nb-err" class="mt-3 error-box" hidden></p>
+  <div class="mt-5 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800/50">
+    <p id="nb-bits" class="mb-2 font-mono text-xs text-zinc-500"></p>
+    <p class="mb-1 text-xs font-medium tracking-wide text-zinc-500 uppercase">{L.twos}</p>
+    <dl id="nb-twos" class="space-y-1 font-mono text-xs"></dl>
+  </div>
+</div>
+
+<script>
+  import { bitLength, group, parseBigInt, toBase, twosComplement } from '../../lib/base';
+
+  const root = document.getElementById('nb')!;
+  const L = JSON.parse(root.dataset.l!);
+  const inputs = [...root.querySelectorAll<HTMLInputElement>('input[data-base]')];
+  const err = document.getElementById('nb-err')!;
+  const baseEl = document.getElementById('nb-base') as HTMLInputElement;
+  const grp = document.getElementById('nb-group') as HTMLInputElement;
+  const upper = document.getElementById('nb-upper') as HTMLInputElement;
+  let value: bigint | null = 255n;
+
+  const baseOf = (el: HTMLInputElement) => (el.dataset.base === 'custom' ? Math.min(36, Math.max(2, Number(baseEl.value) || 36)) : Number(el.dataset.base));
+  const groupSize = (b: number) => (b === 2 || b === 16 ? 4 : 3);
+
+  function render(source?: HTMLInputElement) {
+    for (const el of inputs) {
+      if (el === source) continue;
+      if (value === null) {
+        el.value = '';
+        continue;
+      }
+      const b = baseOf(el);
+      let s = toBase(value, b);
+      if (b === 16 && upper.checked) s = s.toUpperCase();
+      el.value = grp.checked ? group(s, groupSize(b), b === 10 ? ',' : ' ') : s;
+    }
+    const bits = document.getElementById('nb-bits')!;
+    const twos = document.getElementById('nb-twos')!;
+    if (value === null) {
+      bits.textContent = '';
+      twos.replaceChildren();
+      return;
+    }
+    bits.textContent = `${bitLength(value)} ${L.bits}`;
+    twos.replaceChildren(
+      ...[8, 16, 32, 64].map((n) => {
+        const row = document.createElement('div');
+        row.className = 'flex gap-3';
+        const k = document.createElement('dt');
+        k.className = 'w-14 shrink-0 text-zinc-400';
+        k.textContent = `${n}-bit`;
+        const v = document.createElement('dd');
+        v.className = 'break-all text-zinc-700 dark:text-zinc-300';
+        const tc = twosComplement(value!, n);
+        v.textContent = tc ? group(tc, 4) : `— ${L.overflow}`;
+        row.append(k, v);
+        return row;
+      }),
+    );
+  }
+
+  for (const el of inputs) {
+    el.addEventListener('input', () => {
+      err.hidden = true;
+      if (!el.value.trim()) {
+        value = null;
+        render(el);
+        return;
+      }
+      try {
+        value = parseBigInt(el.value, baseOf(el));
+        render(el);
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = (e as Error).message;
+      }
+    });
+  }
+  [grp, upper, baseEl].forEach((el) => el.addEventListener('input', () => render()));
+  render();
+</script>

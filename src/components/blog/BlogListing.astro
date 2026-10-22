@@ -1,0 +1,122 @@
+---
+// Shared layout for /blog/ and /blog/category/<slug>/: category tabs, featured post,
+// post grid on the left; author card, tags and RSS on the right.
+import PostCard from '../PostCard.astro';
+import FeaturedPost from './FeaturedPost.astro';
+import AuthorCard from './AuthorCard.astro';
+import { categories } from '../../data/categories';
+import { useTranslations, type Lang } from '../../i18n/ui';
+import { tagSlug, type Post } from '../../lib/posts';
+
+interface Props {
+  lang: Lang;
+  /** Posts to list (already filtered by category if any). */
+  posts: Post[];
+  /** All posts in this language, for counts, tags and the author card. */
+  allPosts: Post[];
+  /** Current category slug, or undefined for "All". */
+  active?: string;
+}
+const { lang, posts, allPosts, active } = Astro.props;
+const t = useTranslations(lang);
+
+const featured = !active ? posts.find((p) => p.data.featured) : undefined;
+const rest = posts.filter((p) => p !== featured);
+
+const counts = new Map<string, number>();
+for (const p of allPosts) counts.set(p.data.category, (counts.get(p.data.category) ?? 0) + 1);
+const tabs = [
+  { href: `/${lang}/blog/`, label: t('blog.all'), emoji: '✦', n: allPosts.length, on: !active },
+  ...categories.map((c) => ({ href: `/${lang}/blog/category/${c.slug}/`, label: c[lang], emoji: c.emoji, n: counts.get(c.slug) ?? 0, on: active === c.slug })),
+];
+
+const tagCounts = new Map<string, number>();
+for (const p of allPosts) for (const tag of p.data.tags) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+const tags = [...tagCounts].sort((a, b) => b[1] - a[1]).slice(0, 30);
+const tutorials = posts.filter((p) => p.data.kind === 'tutorial').length;
+---
+
+<div class="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
+  <section class="min-w-0">
+    <slot name="header" />
+
+    <nav class="-mx-4 mt-6 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" aria-label={t('blog.categories')}>
+      {
+        tabs.map((tab) => (
+          <a
+            href={tab.href}
+            aria-current={tab.on ? 'page' : undefined}
+            class:list={[
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm whitespace-nowrap transition',
+              tab.on
+                ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
+            ]}
+          >
+            <span aria-hidden="true">{tab.emoji}</span>
+            {tab.label}
+            <span class="text-xs opacity-60">{tab.n}</span>
+          </a>
+        ))
+      }
+    </nav>
+
+    {
+      tutorials > 0 && tutorials < posts.length && (
+        <div id="kind-filter" class="mt-4 flex gap-1.5 text-xs">
+          <button type="button" class="chip" data-kind="all" aria-pressed="true">{t('blog.all')}</button>
+          <button type="button" class="chip" data-kind="article" aria-pressed="false">{t('blog.articles')}</button>
+          <button type="button" class="chip" data-kind="tutorial" aria-pressed="false">{t('blog.tutorials')}</button>
+        </div>
+      )
+    }
+
+    {featured && <div class="mt-6"><FeaturedPost post={featured} lang={lang} /></div>}
+
+    <div id="post-list" class="mt-6 space-y-3">
+      {rest.map((post) => <PostCard post={post} lang={lang} variant="row" />)}
+    </div>
+    {posts.length === 0 && <p class="rounded-xl border border-dashed border-zinc-300 py-16 text-center text-zinc-500 dark:border-zinc-700">{t('blog.empty')}</p>}
+  </section>
+
+  <aside class="space-y-6">
+    <AuthorCard lang={lang} postCount={allPosts.length} />
+    {
+      tags.length > 0 && (
+        <section class="card p-5">
+          <h2 class="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('blog.tags')}</h2>
+          <div class="flex flex-wrap gap-1.5">
+            {tags.map(([tag, n]) => (
+              <a href={`/${lang}/blog/tags/${tagSlug(tag)}/`} class="rounded-md bg-zinc-100 px-2 py-1 font-mono text-xs text-zinc-600 hover:bg-brand-50 hover:text-brand-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-brand-500/10 dark:hover:text-brand-400">
+                #{tag} <span class="opacity-50">{n}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )
+    }
+  </aside>
+</div>
+
+<style>
+  #kind-filter .chip[aria-pressed='true'] {
+    border-color: var(--color-brand-500);
+    background: var(--color-brand-50);
+    color: var(--color-brand-700);
+  }
+  :global(.dark) #kind-filter .chip[aria-pressed='true'] {
+    background: color-mix(in oklch, var(--color-brand-500) 10%, transparent);
+    color: var(--color-brand-400);
+  }
+</style>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('#kind-filter [data-kind]');
+  const cards = document.querySelectorAll<HTMLElement>('#post-list [data-kind]');
+  buttons.forEach((b) =>
+    b.addEventListener('click', () => {
+      buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      cards.forEach((c) => (c.hidden = b.dataset.kind !== 'all' && c.dataset.kind !== b.dataset.kind));
+    }),
+  );
+</script>

@@ -1,0 +1,172 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+import { fieldTypes } from '../../lib/fake-data';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: {
+    data: 'Fake records',
+    text: 'Placeholder text',
+    locale: 'Locale',
+    rows: 'Rows',
+    format: 'Format',
+    table: 'Table',
+    seed: 'Seed',
+    reroll: 'New seed',
+    fields: 'Fields',
+    add: 'Add field',
+    paragraphs: 'Paragraphs',
+    classic: 'Start with “Lorem ipsum…”',
+    download: 'Download',
+    note: 'All values are fictional. US phone numbers use the reserved 555-01xx range; Chinese mobile numbers are random and may match real numbers — never use them to send messages.',
+    types: { id: 'Auto ID', uuid: 'UUID', name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', address: 'Address', city: 'City', date: 'Date', datetime: 'Date-time', int: 'Integer', price: 'Price', bool: 'Boolean', ip: 'IP (private)', url: 'URL', sentence: 'Sentence' },
+  },
+  zh: {
+    data: '假数据',
+    text: '占位文本',
+    locale: '语言',
+    rows: '行数',
+    format: '格式',
+    table: '表名',
+    seed: '随机种子',
+    reroll: '换一批',
+    fields: '字段',
+    add: '添加字段',
+    paragraphs: '段落数',
+    classic: '以“Lorem ipsum…”开头',
+    download: '下载',
+    note: '所有数据均为虚构。美国电话使用保留号段 555-01xx；中国手机号为随机生成，可能与真实号码重合，切勿用于发送短信或拨打。',
+    types: { id: '自增 ID', uuid: 'UUID', name: '姓名', email: '邮箱', phone: '电话', company: '公司', address: '地址', city: '城市', date: '日期', datetime: '日期时间', int: '整数', price: '价格', bool: '布尔', ip: 'IP（内网）', url: 'URL', sentence: '句子' },
+  },
+}[lang];
+const defaults = [
+  ['id', 'id'],
+  ['name', 'name'],
+  ['email', 'email'],
+  ['phone', 'phone'],
+  ['city', 'city'],
+  ['created_at', 'datetime'],
+];
+---
+
+<div id="fd" data-l={JSON.stringify(L)} data-lang={lang} data-defaults={JSON.stringify(defaults)} data-types={JSON.stringify(fieldTypes)}>
+  <div class="mb-4 flex flex-wrap items-center gap-1.5">
+    <label class="chip"><input type="radio" name="fd-mode" value="data" checked class="sr-only" />{L.data}</label>
+    <label class="chip"><input type="radio" name="fd-mode" value="text" class="sr-only" />{L.text}</label>
+    <span class="mx-2 h-4 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+    <label class="chip"><input type="radio" name="fd-locale" value={lang} checked class="sr-only" />{lang === 'zh' ? '中文' : 'English'}</label>
+    <label class="chip"><input type="radio" name="fd-locale" value={lang === 'zh' ? 'en' : 'zh'} class="sr-only" />{lang === 'zh' ? 'English' : '中文'}</label>
+  </div>
+
+  <section id="fd-data-opts">
+    <div class="grid gap-3 sm:grid-cols-4">
+      <label class="block"><span class="label">{L.rows}</span><input id="fd-rows" type="number" min="1" max="1000" value="10" class="field font-mono" /></label>
+      <label class="block"
+        ><span class="label">{L.format}</span>
+        <select id="fd-format" class="field"><option value="json">JSON</option><option value="jsonl">JSONL</option><option value="csv">CSV</option><option value="sql">SQL INSERT</option></select></label
+      >
+      <label class="block"><span class="label">{L.table}</span><input id="fd-table" value="users" class="field font-mono" /></label>
+      <label class="block"><span class="label">{L.seed}</span><input id="fd-seed" type="number" value="42" class="field font-mono" /></label>
+    </div>
+    <p class="label mt-4">{L.fields}</p>
+    <ul id="fd-fields" class="space-y-1.5"></ul>
+    <button type="button" id="fd-add" class="btn mt-2 px-2 py-1 text-xs">+ {L.add}</button>
+  </section>
+
+  <section id="fd-text-opts" hidden>
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="block"><span class="label">{L.paragraphs}</span><input id="fd-paras" type="number" min="1" max="50" value="3" class="field w-28 font-mono" /></label>
+      <label class="chip mb-1"><input type="checkbox" id="fd-classic" checked class="sr-only" />{L.classic}</label>
+    </div>
+  </section>
+
+  <div class="mt-4 mb-1.5 flex items-center justify-end gap-1.5">
+    <button type="button" class="btn px-2 py-1 text-xs" id="fd-reroll">↻ {L.reroll}</button>
+    <button type="button" class="btn px-2 py-1 text-xs" id="fd-dl">{L.download}</button>
+    <button type="button" class="btn px-2 py-1 text-xs" data-copy="#fd-out">{t('common.copy')}</button>
+  </div>
+  <textarea id="fd-out" class="field min-h-72!" readonly spellcheck="false"></textarea>
+  <p class="mt-2 text-xs text-zinc-500">{L.note}</p>
+</div>
+
+<script>
+  import { formatRows, generateRows, paragraphs, type FieldType, type Locale, type OutputFormat } from '../../lib/fake-data';
+  import { downloadText } from '../../scripts/download';
+
+  const root = document.getElementById('fd')!;
+  const L = JSON.parse(root.dataset.l!);
+  const types: FieldType[] = JSON.parse(root.dataset.types!);
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const list = $('fd-fields');
+  const out = $<HTMLTextAreaElement>('fd-out');
+  const radio = (name: string) => (root.querySelector(`input[name="${name}"]:checked`) as HTMLInputElement).value;
+
+  function addField(key: string, type: FieldType) {
+    const li = document.createElement('li');
+    li.className = 'flex items-center gap-2';
+    const k = document.createElement('input');
+    k.className = 'field h-8 flex-1 py-0 font-mono text-sm';
+    k.value = key;
+    k.dataset.fdKey = '';
+    const s = document.createElement('select');
+    s.className = 'field h-8 w-36 py-0 text-sm';
+    for (const ty of types) {
+      const o = document.createElement('option');
+      o.value = ty;
+      o.textContent = L.types[ty];
+      s.append(o);
+    }
+    s.value = type;
+    s.dataset.fdType = '';
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn h-8 px-2 text-xs';
+    rm.textContent = '✕';
+    rm.addEventListener('click', () => {
+      li.remove();
+      render();
+    });
+    li.append(k, s, rm);
+    list.append(li);
+  }
+
+  function render() {
+    const locale = radio('fd-locale') as Locale;
+    const seed = Number($<HTMLInputElement>('fd-seed').value) || 0;
+    const mode = radio('fd-mode');
+    $('fd-data-opts').hidden = mode !== 'data';
+    $('fd-text-opts').hidden = mode !== 'text';
+    if (mode === 'text') {
+      const n = Math.min(50, Math.max(1, Number($<HTMLInputElement>('fd-paras').value) || 1));
+      out.value = paragraphs(seed, n, locale, $<HTMLInputElement>('fd-classic').checked).join('\n\n');
+      return;
+    }
+    const fields = [...list.children].map((li) => ({
+      key: (li.querySelector('[data-fd-key]') as HTMLInputElement).value.trim() || 'field',
+      type: (li.querySelector('[data-fd-type]') as HTMLSelectElement).value as FieldType,
+    }));
+    const rows = Math.min(1000, Math.max(1, Number($<HTMLInputElement>('fd-rows').value) || 1));
+    out.value = formatRows(generateRows(seed, rows, fields, locale), $<HTMLSelectElement>('fd-format').value as OutputFormat, $<HTMLInputElement>('fd-table').value.trim() || 'users');
+  }
+
+  for (const [k, ty] of JSON.parse(root.dataset.defaults!)) addField(k, ty);
+  root.addEventListener('input', render);
+  root.addEventListener('change', render);
+  $('fd-add').addEventListener('click', () => {
+    addField('field', 'sentence');
+    render();
+  });
+  $('fd-reroll').addEventListener('click', () => {
+    $<HTMLInputElement>('fd-seed').value = String(Math.floor(Math.random() * 100000));
+    render();
+  });
+  $('fd-dl').addEventListener('click', () => {
+    if (radio('fd-mode') === 'text') return downloadText('lorem.txt', out.value);
+    const f = $<HTMLSelectElement>('fd-format').value;
+    downloadText(`fake-data.${f === 'sql' ? 'sql' : f}`, out.value, f === 'csv' ? 'text/csv' : f === 'sql' ? 'application/sql' : 'application/json', f === 'csv');
+  });
+  render();
+</script>

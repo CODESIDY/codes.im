@@ -1,0 +1,134 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { name: 'Site or project name', summary: 'Summary (one sentence)', details: 'Details (optional, Markdown)', sections: 'Sections', section: 'Section name', links: 'Links — one per line: Title | URL | notes', add: 'Add section', remove: 'Remove', sitemap: 'Import from sitemap.xml', sitemapPh: 'Paste the contents of your sitemap.xml', importBtn: 'Import', download: 'Download llms.txt', preview: 'llms.txt' },
+  zh: { name: '网站或项目名称', summary: '简介（一句话）', details: '详细说明（可选，支持 Markdown）', sections: '分组', section: '分组名称', links: '链接 —— 每行一个：标题 | 网址 | 说明', add: '添加分组', remove: '删除', sitemap: '从 sitemap.xml 导入', sitemapPh: '粘贴 sitemap.xml 的内容', importBtn: '导入', download: '下载 llms.txt', preview: 'llms.txt' },
+}[lang];
+const initial = {
+  name: 'codes.im',
+  summary: 'Free, privacy-first developer and LLM tools that run entirely in the browser.',
+  details: 'Every tool is a static page. Inputs are processed locally and never uploaded.',
+  sections: [
+    {
+      name: 'Tools',
+      links: 'JSON Repair | https://codes.im/en/json-repair/ | Fix broken JSON from LLM output\nToken Counter | https://codes.im/en/token-counter/ | Count GPT tokens\nMCP Config Generator | https://codes.im/en/mcp-config-generator/',
+    },
+    { name: 'Optional', links: 'Blog | https://codes.im/en/blog/' },
+  ],
+};
+---
+
+<div id="lt" data-l={JSON.stringify(L)} data-initial={JSON.stringify(initial)}>
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="space-y-4">
+      <div>
+        <label class="label" for="lt-name">{L.name}</label>
+        <input id="lt-name" class="field" />
+      </div>
+      <div>
+        <label class="label" for="lt-summary">{L.summary}</label>
+        <input id="lt-summary" class="field" />
+      </div>
+      <div>
+        <label class="label" for="lt-details">{L.details}</label>
+        <textarea id="lt-details" class="field min-h-20!"></textarea>
+      </div>
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <span class="label mb-0">{L.sections}</span>
+          <button type="button" class="btn px-2 py-0.5 text-xs" data-act="add">+ {L.add}</button>
+        </div>
+        <div id="lt-sections" class="space-y-3"></div>
+      </div>
+      <details class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+        <summary class="cursor-pointer text-sm font-medium">{L.sitemap}</summary>
+        <textarea id="lt-sitemap" class="field mt-2 min-h-24!" placeholder={L.sitemapPh}></textarea>
+        <button type="button" class="btn mt-2 px-2 py-1 text-xs" data-act="import">{L.importBtn}</button>
+      </details>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0 font-mono normal-case">{L.preview}</span>
+        <span class="flex gap-2">
+          <button type="button" class="btn px-2 py-0.5 text-xs" data-act="download">{L.download}</button>
+          <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#lt-out">{t('common.copy')}</button>
+        </span>
+      </div>
+      <pre id="lt-out" class="code min-h-96 overflow-auto rounded-lg bg-zinc-50 p-4 whitespace-pre-wrap dark:bg-zinc-800/50"></pre>
+    </div>
+  </div>
+  <template id="lt-tpl">
+    <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" data-section>
+      <div class="mb-2 flex gap-2">
+        <input class="field h-8 py-0 font-medium" data-f="name" />
+        <button type="button" class="btn shrink-0 px-2 py-0.5 text-xs" data-act="remove"></button>
+      </div>
+      <textarea class="field min-h-24! text-xs" data-f="links" spellcheck="false"></textarea>
+    </div>
+  </template>
+</div>
+
+<script>
+  import { buildLlmsTxt, parseLinkLines, sitemapToSections } from '../../lib/llms-txt';
+  import { downloadText } from '../../scripts/download';
+
+  const root = document.getElementById('lt')!;
+  const L = JSON.parse(root.dataset.l!);
+  const init = JSON.parse(root.dataset.initial!);
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(`lt-${id}`) as T;
+  const list = $('sections');
+  const tpl = $<HTMLTemplateElement>('tpl');
+
+  function addSection(name = '', links = '') {
+    const el = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    (el.querySelector('[data-f="name"]') as HTMLInputElement).value = name;
+    (el.querySelector('[data-f="name"]') as HTMLInputElement).placeholder = L.section;
+    (el.querySelector('[data-f="links"]') as HTMLTextAreaElement).value = links;
+    (el.querySelector('[data-f="links"]') as HTMLTextAreaElement).placeholder = L.links;
+    el.querySelector('[data-act="remove"]')!.textContent = L.remove;
+    list.append(el);
+  }
+
+  function value() {
+    return {
+      name: $<HTMLInputElement>('name').value,
+      summary: $<HTMLInputElement>('summary').value,
+      details: $<HTMLTextAreaElement>('details').value,
+      sections: [...list.querySelectorAll<HTMLElement>('[data-section]')].map((s) => ({
+        name: (s.querySelector('[data-f="name"]') as HTMLInputElement).value,
+        links: parseLinkLines((s.querySelector('[data-f="links"]') as HTMLTextAreaElement).value),
+      })),
+    };
+  }
+
+  function run() {
+    $('out').textContent = buildLlmsTxt(value());
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'add') addSection();
+    else if (act === 'remove') btn.closest('[data-section]')?.remove();
+    else if (act === 'download') return downloadText('llms.txt', $('out').textContent ?? '', 'text/plain');
+    else if (act === 'import') {
+      for (const s of sitemapToSections($<HTMLTextAreaElement>('sitemap').value)) {
+        addSection(s.name, s.links.map((l) => `${l.title} | ${l.url}`).join('\n'));
+      }
+    }
+    run();
+  });
+
+  $<HTMLInputElement>('name').value = init.name;
+  $<HTMLInputElement>('summary').value = init.summary;
+  $<HTMLTextAreaElement>('details').value = init.details;
+  for (const s of init.sections) addSection(s.name, s.links);
+  run();
+</script>

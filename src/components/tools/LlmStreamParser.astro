@@ -1,0 +1,169 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { raw: 'Raw stream', samples: 'Samples', text: 'Final text', reasoning: 'Reasoning / thinking', tools: 'Tool calls', usage: 'Usage', provider: 'Format', model: 'Model', finish: 'Stop reason', events: 'Events', bad: 'Unparsed lines', badArgs: 'Arguments are not valid JSON — the stream may be incomplete.', empty: '(empty)', errors: 'API errors', placeholder: 'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\ndata: {"choices":[{"delta":{"content":"lo"}}]}' },
+  zh: { raw: '原始流', samples: '示例', text: '最终文本', reasoning: '思考过程（reasoning / thinking）', tools: '工具调用', usage: '用量', provider: '格式', model: '模型', finish: '结束原因', events: '事件数', bad: '无法解析的行', badArgs: '参数不是合法 JSON —— 流可能不完整。', empty: '（空）', errors: 'API 错误', placeholder: 'data: {"choices":[{"delta":{"content":"你"}}]}\n\ndata: {"choices":[{"delta":{"content":"好"}}]}' },
+}[lang];
+
+const openai = [
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { role: 'assistant', content: '' } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { content: 'Let me check ' } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { content: 'the weather.' } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name: 'get_weather', arguments: '' } }] } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"city":' } }] } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '"Tokyo"}' } }] } }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] },
+  { id: 'chatcmpl-1', object: 'chat.completion.chunk', model: 'gpt-4o-mini', choices: [], usage: { prompt_tokens: 82, completion_tokens: 24, total_tokens: 106 } },
+]
+  .map((c) => `data: ${JSON.stringify(c)}\n`)
+  .join('\n') + '\ndata: [DONE]\n';
+
+const anthropic = [
+  ['message_start', { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-sonnet-4-5', content: [], usage: { input_tokens: 25, output_tokens: 1 } } }],
+  ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }],
+  ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'The user wants a haiku about code.' } }],
+  ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+  ['content_block_start', { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }],
+  ['content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Silent loops unwind,\n' } }],
+  ['content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'bugs sleep beneath the bright screen—\nship it before dawn.' } }],
+  ['content_block_stop', { type: 'content_block_stop', index: 1 }],
+  ['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 31 } }],
+  ['message_stop', { type: 'message_stop' }],
+]
+  .map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n`)
+  .join('\n');
+---
+
+<div id="sse" data-l={JSON.stringify(L)} data-openai={openai} data-anthropic={anthropic}>
+  <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+    <label class="label mb-0" for="sse-in">{L.raw}</label>
+    <span class="flex flex-wrap items-center gap-2">
+      <span class="text-xs text-zinc-500">{L.samples}</span>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-sample="openai">OpenAI</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-sample="anthropic">Anthropic</button>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-sample="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="sse-in" class="field min-h-56 whitespace-pre" wrap="off" spellcheck="false" placeholder={L.placeholder}></textarea>
+
+  <div id="sse-meta" class="mt-4 flex flex-wrap gap-2 text-xs"></div>
+  <div id="sse-errors" class="mt-3 error-box" hidden></div>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{L.text}</span>
+        <button type="button" class="btn px-2 py-0.5 text-xs" data-copy="#sse-text">{t('common.copy')}</button>
+      </div>
+      <pre id="sse-text" class="min-h-40 overflow-auto rounded-lg bg-zinc-50 p-3 text-sm leading-6 whitespace-pre-wrap dark:bg-zinc-800/50"></pre>
+      <details id="sse-reason-wrap" class="mt-3" hidden>
+        <summary class="cursor-pointer text-xs font-medium text-zinc-500 uppercase">{L.reasoning}</summary>
+        <pre id="sse-reason" class="mt-2 max-h-64 overflow-auto rounded-lg bg-zinc-50 p-3 text-sm leading-6 whitespace-pre-wrap text-zinc-600 italic dark:bg-zinc-800/50 dark:text-zinc-400"></pre>
+      </details>
+    </div>
+    <div>
+      <span class="label">{L.tools}</span>
+      <div id="sse-tools" class="space-y-2"></div>
+      <span class="label mt-4">{L.usage}</span>
+      <pre id="sse-usage" class="code overflow-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { parseStream } from '../../lib/sse';
+
+  const root = document.getElementById('sse')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('sse-in') as HTMLTextAreaElement;
+  const $ = (id: string) => document.getElementById(`sse-${id}`)!;
+
+  const names: Record<string, string> = {
+    'openai-chat': 'OpenAI Chat Completions',
+    'openai-responses': 'OpenAI Responses API',
+    anthropic: 'Anthropic Messages',
+    gemini: 'Google Gemini',
+    ollama: 'Ollama',
+    unknown: '?',
+  };
+
+  function badge(k: string, v: string, tone = '') {
+    const s = document.createElement('span');
+    s.className = `rounded-full border px-2.5 py-1 ${tone || 'border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300'}`;
+    const b = document.createElement('b');
+    b.className = 'mr-1 font-medium text-zinc-400';
+    b.textContent = k;
+    s.append(b, v);
+    return s;
+  }
+
+  function run() {
+    if (!input.value.trim()) {
+      for (const id of ['meta', 'tools']) $(id).replaceChildren();
+      $('text').textContent = $('usage').textContent = '';
+      $('errors').hidden = true;
+      ($('reason-wrap') as HTMLDetailsElement).hidden = true;
+      return;
+    }
+    const r = parseStream(input.value);
+    const meta: Node[] = [badge(L.provider, names[r.provider], 'border-brand-400/60 text-brand-700 dark:text-brand-400')];
+    if (r.model) meta.push(badge(L.model, r.model));
+    if (r.finishReason) meta.push(badge(L.finish, r.finishReason));
+    meta.push(badge(L.events, String(r.events)));
+    if (r.badLines) meta.push(badge(L.bad, String(r.badLines), 'border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-400'));
+    $('meta').replaceChildren(...meta);
+
+    $('errors').hidden = !r.errors.length;
+    $('errors').textContent = r.errors.length ? `${L.errors}: ${r.errors.join(' · ')}` : '';
+
+    $('text').textContent = r.text || L.empty;
+    const rw = $('reason-wrap') as HTMLDetailsElement;
+    rw.hidden = !r.reasoning;
+    $('reason').textContent = r.reasoning;
+
+    $('tools').replaceChildren(
+      ...(r.toolCalls.length
+        ? r.toolCalls.map((tc) => {
+            const box = document.createElement('div');
+            box.className = 'rounded-lg border border-zinc-200 p-3 dark:border-zinc-800';
+            const h = document.createElement('p');
+            h.className = 'mb-2 font-mono text-sm font-semibold text-zinc-900 dark:text-zinc-100';
+            h.textContent = tc.name + (tc.id ? `  ·  ${tc.id}` : '');
+            const pre = document.createElement('pre');
+            pre.className = 'code overflow-auto';
+            let ok = true;
+            try {
+              pre.textContent = JSON.stringify(JSON.parse(tc.arguments || '{}'), null, 2);
+            } catch {
+              ok = false;
+              pre.textContent = tc.arguments;
+            }
+            box.append(h, pre);
+            if (!ok) {
+              const warn = document.createElement('p');
+              warn.className = 'mt-2 text-xs text-red-600 dark:text-red-400';
+              warn.textContent = L.badArgs;
+              box.append(warn);
+            }
+            return box;
+          })
+        : [Object.assign(document.createElement('p'), { className: 'text-sm text-zinc-400', textContent: L.empty })]),
+    );
+    $('usage').textContent = r.usage ? JSON.stringify(r.usage, null, 2) : L.empty;
+  }
+
+  root.addEventListener('click', (e) => {
+    const s = (e.target as HTMLElement).closest<HTMLElement>('[data-sample]')?.dataset.sample;
+    if (!s) return;
+    input.value = s === 'clear' ? '' : root.dataset[s] ?? '';
+    run();
+  });
+  input.addEventListener('input', run);
+  input.value = root.dataset.anthropic!;
+  run();
+</script>

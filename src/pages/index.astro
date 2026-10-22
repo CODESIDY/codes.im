@@ -1,0 +1,26 @@
+---
+// Root: send visitors to their language. Search engines get /en/ via the
+// canonical + meta refresh; browsers pick zh when the user's language is Chinese.
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>codes.im</title>
+    <link rel="canonical" href="https://codes.im/en/" />
+    <link rel="alternate" hreflang="en" href="https://codes.im/en/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://codes.im/zh/" />
+    <link rel="alternate" hreflang="x-default" href="https://codes.im/en/" />
+    <script is:inline>
+      (function () {
+        var l = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+        location.replace(/^zh/i.test(l) ? '/zh/' : '/en/');
+      })();
+    </script>
+    <noscript><meta http-equiv="refresh" content="0; url=/en/" /></noscript>
+  </head>
+  <body>
+    <a href="/en/">English</a> · <a href="/zh/">中文</a>
+  </body>
+</html>

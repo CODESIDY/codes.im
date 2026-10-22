@@ -1,0 +1,119 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { input: 'Source messages', to: 'Convert to', detected: 'Detected', from: 'Source format', auto: 'Auto', turns: 'turns', invalid: 'Invalid JSON', warn: { merged: 'Consecutive messages with the same role were merged — Anthropic requires user and assistant turns to alternate.', 'starts-with-assistant': 'The conversation starts with an assistant message; Anthropic expects the first message to be from the user.', 'image-url': 'Gemini cannot fetch arbitrary image URLs: upload the image with the Files API or use a Cloud Storage URI.' } },
+  zh: { input: '源消息', to: '转换为', detected: '识别为', from: '源格式', auto: '自动', turns: '轮', invalid: 'JSON 不合法', warn: { merged: '相同角色的连续消息已合并 —— Anthropic 要求 user 和 assistant 交替出现。', 'starts-with-assistant': '对话以 assistant 消息开头，Anthropic 要求第一条消息来自 user。', 'image-url': 'Gemini 无法直接读取任意图片 URL：请先用 Files API 上传图片，或使用 Cloud Storage 地址。' } },
+}[lang];
+const sample = JSON.stringify(
+  [
+    { role: 'system', content: 'You are a concise travel assistant.' },
+    { role: 'user', content: 'What is the weather in Paris right now?' },
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } }],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: '{"temp_c":21,"sky":"sunny"}' },
+    { role: 'assistant', content: 'It is sunny and 21°C in Paris.' },
+  ],
+  null,
+  2,
+);
+const names = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' };
+---
+
+<div id="cf" data-l={JSON.stringify(L)} data-sample={sample} data-names={JSON.stringify(names)}>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <label class="label mb-0" for="cf-in">{L.input}</label>
+        <span class="flex items-center gap-1">
+          <span class="mr-1 text-xs text-zinc-500">{L.from}</span>
+          <label class="chip"><input type="radio" name="cf-from" value="auto" checked class="sr-only" />{L.auto}</label>
+          {Object.entries(names).map(([v, n]) => <label class="chip"><input type="radio" name="cf-from" value={v} class="sr-only" />{n}</label>)}
+        </span>
+      </div>
+      <textarea id="cf-in" class="field min-h-[28rem]" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span class="flex items-center gap-1">
+          <span class="mr-1 text-xs text-zinc-500">{L.to}</span>
+          {Object.entries(names).map(([v, n]) => <label class="chip"><input type="radio" name="cf-to" value={v} checked={v === 'anthropic'} class="sr-only" />{n}</label>)}
+        </span>
+        <button type="button" class="btn btn-primary px-2 py-0.5 text-xs" data-copy="#cf-out">{t('common.copy')}</button>
+      </div>
+      <textarea id="cf-out" class="field min-h-[28rem]" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+  <p id="cf-meta" class="mt-3 font-mono text-xs text-zinc-500"></p>
+  <ul id="cf-warn" class="mt-2 space-y-1"></ul>
+  <p id="cf-err" class="mt-3 error-box" hidden></p>
+</div>
+
+<script>
+  import { convertChat, detectFormat, type ChatFormat } from '../../lib/chat-format';
+  import { repairJson } from '../../lib/json-repair';
+
+  const root = document.getElementById('cf')!;
+  const L = JSON.parse(root.dataset.l!);
+  const names = JSON.parse(root.dataset.names!);
+  const input = document.getElementById('cf-in') as HTMLTextAreaElement;
+  const out = document.getElementById('cf-out') as HTMLTextAreaElement;
+  const meta = document.getElementById('cf-meta')!;
+  const warn = document.getElementById('cf-warn')!;
+  const err = document.getElementById('cf-err')!;
+  const radio = (n: string) => (root.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement).value;
+
+  function run() {
+    err.hidden = true;
+    warn.replaceChildren();
+    if (!input.value.trim()) {
+      out.value = meta.textContent = '';
+      return;
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(input.value);
+    } catch {
+      // Be forgiving: pasted Python dicts or JS objects are common here.
+      const r = repairJson(input.value);
+      if (r.value === null || typeof r.value !== 'object') {
+        err.hidden = false;
+        err.textContent = L.invalid;
+        out.value = '';
+        return;
+      }
+      data = r.value;
+    }
+    const fromSel = radio('cf-from');
+    const from = (fromSel === 'auto' ? detectFormat(data) : fromSel) as ChatFormat;
+    const to = radio('cf-to') as ChatFormat;
+    try {
+      const r = convertChat(data, to, from);
+      out.value = JSON.stringify(r.output, null, 2);
+      meta.textContent = `${L.detected}: ${names[from]} → ${names[to]} · ${r.turns} ${L.turns}`;
+      warn.replaceChildren(
+        ...r.warnings.map((w) => {
+          const li = document.createElement('li');
+          li.className = 'rounded-md bg-amber-50 px-3 py-1.5 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300';
+          li.textContent = L.warn[w] ?? w;
+          return li;
+        }),
+      );
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  }
+
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  input.value = root.dataset.sample!;
+  run();
+</script>

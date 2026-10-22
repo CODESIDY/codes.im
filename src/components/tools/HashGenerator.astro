@@ -1,0 +1,96 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { text: 'Text', file: 'Or hash a file', choose: 'Choose file', upper: 'Uppercase', computing: 'Computing…' },
+  zh: { text: '文本', file: '或计算文件哈希', choose: '选择文件', upper: '大写', computing: '计算中…' },
+}[lang];
+const algos = ['MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'];
+---
+
+<div id="hash" data-l={JSON.stringify(L)}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="hash-in">{L.text}</label>
+    <span class="flex items-center gap-2">
+      <label class="chip"><input type="checkbox" id="hash-upper" class="sr-only" />{L.upper}</label>
+      <button type="button" class="btn px-2 py-0.5 text-xs" id="hash-clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="hash-in" class="field min-h-36" spellcheck="false" placeholder="hello world"></textarea>
+  <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+    <span>{L.file}</span>
+    <label class="btn px-2 py-1 text-xs">
+      {L.choose}
+      <input type="file" id="hash-file" class="sr-only" />
+    </label>
+    <span id="hash-fname" class="font-mono text-xs"></span>
+  </div>
+
+  <dl class="mt-5 divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+    {
+      algos.map((a) => (
+        <div class="flex items-center gap-3 px-3 py-2.5">
+          <dt class="w-20 shrink-0 font-mono text-xs font-semibold text-zinc-500">{a}</dt>
+          <dd id={`h-${a}`} class="min-w-0 flex-1 font-mono text-[13px] break-all text-zinc-900 dark:text-zinc-100" />
+          <button type="button" class="btn px-2 py-0.5 text-xs" data-copy={`#h-${a}`}>
+            {t('common.copy')}
+          </button>
+        </div>
+      ))
+    }
+  </dl>
+</div>
+
+<script>
+  import { md5, toHex } from '../../lib/md5';
+
+  const root = document.getElementById('hash')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('hash-in') as HTMLTextAreaElement;
+  const upper = document.getElementById('hash-upper') as HTMLInputElement;
+  const file = document.getElementById('hash-file') as HTMLInputElement;
+  const fname = document.getElementById('hash-fname')!;
+  const algos = ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'];
+  const out = (a: string) => document.getElementById(`h-${a}`)!;
+
+  let bytes = new Uint8Array();
+  let seq = 0;
+
+  async function compute() {
+    const my = ++seq;
+    const data = bytes;
+    const fix = (h: string) => (upper.checked ? h.toUpperCase() : h);
+    const results: [string, string][] = [['MD5', md5(data)]];
+    for (const a of algos) results.push([a, toHex(await crypto.subtle.digest(a, data))]);
+    if (my !== seq) return; // a newer input arrived
+    for (const [a, h] of results) out(a).textContent = fix(h);
+  }
+
+  input.addEventListener('input', () => {
+    bytes = new TextEncoder().encode(input.value);
+    fname.textContent = '';
+    compute();
+  });
+  upper.addEventListener('change', compute);
+  document.getElementById('hash-clear')!.addEventListener('click', () => {
+    input.value = '';
+    fname.textContent = '';
+    bytes = new Uint8Array();
+    compute();
+  });
+  file.addEventListener('change', async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    fname.textContent = `${f.name} · ${L.computing}`;
+    bytes = new Uint8Array(await f.arrayBuffer());
+    input.value = '';
+    await compute();
+    fname.textContent = `${f.name} · ${f.size.toLocaleString()} bytes`;
+    file.value = '';
+  });
+  compute();
+</script>

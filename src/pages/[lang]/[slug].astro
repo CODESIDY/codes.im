@@ -1,0 +1,202 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ToolCard from '../../components/ToolCard.astro';
+import { toolComponents } from '../../components/tools';
+import { langs, useTranslations, type Lang } from '../../i18n/ui';
+import { getTool, tools } from '../../tools/registry';
+import { inlineCode, plain } from '../../lib/inline';
+import { getPosts, postUrl, formatDate } from '../../lib/posts';
+import { issueUrl } from '../../config';
+import { chainOutputs } from '../../data/chain';
+import { presetsFor, BASE_NAME, BASE_SHORT, CASE_NAME } from '../../data/presets';
+
+export function getStaticPaths() {
+  return langs.flatMap((lang) => tools.map((tool) => ({ params: { lang, slug: tool.slug } })));
+}
+
+const lang = Astro.params.lang as Lang;
+const tool = getTool(Astro.params.slug!)!;
+const tx = tool.text[lang];
+const t = useTranslations(lang);
+const Widget = toolComponents[tool.slug];
+const related = tool.related.map(getTool).filter((x) => x !== undefined);
+const examples = presetsFor(tool.slug).map((p) => ({
+  href: `/${lang}/${tool.slug}/${p.slug}/`,
+  label:
+    p.kind === 'cron'
+      ? `${p.expr} · ${p.label[lang]}`
+      : p.kind === 'base'
+        ? lang === 'zh'
+          ? `${BASE_NAME[p.from].zh}转${BASE_NAME[p.to].zh}`
+          : `${BASE_SHORT[p.from].en} to ${BASE_SHORT[p.to].en}`
+        : `${CASE_NAME[p.from]} → ${CASE_NAME[p.to]}`,
+}));
+const posts = (await getPosts(lang)).filter((p) => p.data.tools.includes(tool.slug)).slice(0, 4);
+
+const url = `https://codes.im/${lang}/${tool.slug}/`;
+const chainOut = chainOutputs[tool.slug];
+const feedback = issueUrl(`[${tool.slug}] `, `Tool: ${url}\n\n`);
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: tx.name,
+    url,
+    description: tx.description,
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Any',
+    browserRequirements: 'Requires JavaScript',
+    isAccessibleForFree: true,
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    inLanguage: lang === 'zh' ? 'zh-CN' : 'en',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: tx.faq.map((f) => ({
+      '@type': 'Question',
+      name: plain(f.q),
+      acceptedAnswer: { '@type': 'Answer', text: plain(f.a) },
+    })),
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'codes.im', item: `https://codes.im/${lang}/` },
+      { '@type': 'ListItem', position: 2, name: t(`cat.${tool.category}`), item: `https://codes.im/${lang}/tools/${tool.category}/` },
+      { '@type': 'ListItem', position: 3, name: tx.name, item: url },
+    ],
+  },
+];
+---
+
+<Layout lang={lang} title={tx.title} description={tx.description} jsonLd={jsonLd}>
+  <nav class="mb-4 text-xs text-zinc-500" aria-label="breadcrumb">
+    <a href={`/${lang}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{t('nav.tools')}</a>
+    <span class="mx-1.5">/</span>
+    <a href={`/${lang}/tools/${tool.category}/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">{t(`cat.${tool.category}`)}</a>
+  </nav>
+
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div class="flex items-center gap-4">
+      <span
+        class="grid h-12 w-14 shrink-0 place-items-center rounded-xl bg-brand-50 font-mono text-sm font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-400"
+        >{tool.glyph}</span
+      >
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-50">{tx.name}</h1>
+        <p class="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">{tx.description}</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2" data-tool-slug={tool.slug}>
+      <button type="button" data-fav data-on={t('tool.faved')} data-off={t('tool.fav')} aria-pressed="false" class="btn group px-2.5 py-1 text-xs aria-pressed:border-amber-400 aria-pressed:text-amber-700 dark:aria-pressed:text-amber-400">
+        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 group-aria-pressed:fill-current" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"></path></svg>
+        <span data-fav-label>{t('tool.fav')}</span>
+      </button>
+      {
+        chainOut && (
+          <div class="relative" data-chain-wrap>
+            <button type="button" data-chain={chainOut} aria-haspopup="menu" aria-expanded="false" class="btn px-2.5 py-1 text-xs">
+              <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+              {t('tool.sendTo')}
+            </button>
+            <div data-chain-menu hidden role="menu" data-empty={t('tool.sendEmpty')} data-title={t('tool.sendTitle')} class="card absolute top-9 left-0 z-20 max-h-80 w-64 max-w-[calc(100vw-2rem)] overflow-auto p-1 shadow-lg"></div>
+          </div>
+        )
+      }
+      <button type="button" data-share data-done={t('tool.shared')} title={t('tool.shareHint')} class="btn px-2.5 py-1 text-xs">
+        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>
+        {t('tool.share')}
+      </button>
+    <p class="flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700 dark:bg-brand-500/10 dark:text-brand-400">
+      <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+        ><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 1 1 8 0v4"></path></svg
+      >
+      {t('tool.privacy')}
+    </p>
+    </div>
+  </header>
+
+  <p data-share-loaded hidden class="ok-box mb-3" data-chain-msg={t('tool.received')}>{t('tool.shareLoaded')}</p>
+  <section id="tool-widget" class="card p-4 sm:p-6">
+    <Widget lang={lang} />
+  </section>
+
+  <div class="mt-4 grid gap-10 lg:grid-cols-[1fr_300px]">
+    <article class="prose-tool">
+      <h2>{t('tool.howto')}</h2>
+      <ol class="list-decimal space-y-1 pl-5">
+        {tx.howto.map((s) => <li set:html={inlineCode(s)} />)}
+      </ol>
+
+      {
+        examples.length > 0 && (
+          <>
+            <h2>{t('tool.examples')}</h2>
+            <ul class="flex flex-wrap gap-2">
+              {examples.map((e) => (
+                <li>
+                  <a href={e.href} class="chip px-2.5 py-1 text-sm hover:border-brand-400">
+                    {e.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+
+      <h2>{t('tool.faq')}</h2>
+      <div class="space-y-3">
+        {
+          tx.faq.map((f) => (
+            <details class="group card px-4 py-3" open>
+              <summary class="cursor-pointer list-none text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                <span set:html={inlineCode(f.q)} />
+              </summary>
+              <p class="mt-2" set:html={inlineCode(f.a)} />
+            </details>
+          ))
+        }
+      </div>
+      {
+        feedback && (
+          <p class="mt-6">
+            <a href={feedback} target="_blank" rel="noopener" class="text-brand-700 hover:underline dark:text-brand-400">
+              {t('tool.feedback')} →
+            </a>
+          </p>
+        )
+      }
+    </article>
+
+    <aside>
+      <h2 class="mt-10 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('tool.related')}</h2>
+      <div class="grid gap-3">
+        {related.map((r) => <ToolCard tool={r} lang={lang} />)}
+      </div>
+      {
+        posts.length > 0 && (
+          <>
+            <h2 class="mt-8 mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('tool.posts')}</h2>
+            <ul class="space-y-2">
+              {posts.map((p) => (
+                <li>
+                  <a href={postUrl(p)} class="card block px-4 py-3 transition hover:border-brand-400 dark:hover:border-brand-500/60">
+                    <span class="block text-sm font-medium text-zinc-900 dark:text-zinc-100">{p.data.title}</span>
+                    <span class="mt-0.5 block text-xs text-zinc-500">{formatDate(p.data.date, lang)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+    </aside>
+  </div>
+</Layout>
+
+<script>
+  import '../../scripts/tool-page';
+</script>

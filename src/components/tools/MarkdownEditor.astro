@@ -1,0 +1,114 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { md: 'Markdown', preview: 'Preview', copyHtml: 'Copy HTML', copyRich: 'Copy rich text', download: 'Download .md', words: 'words', chars: 'chars', min: 'min read', saved: 'Draft saved in this browser' },
+  zh: { md: 'Markdown', preview: '预览', copyHtml: '复制 HTML', copyRich: '复制富文本', download: '下载 .md', words: '词', chars: '字符', min: '分钟阅读', saved: '草稿已保存在本浏览器' },
+}[lang];
+const sample =
+  lang === 'zh'
+    ? '# 项目名称\n\n一句话介绍这个项目是做什么的。\n\n## 功能\n\n- [x] 支持 **GitHub 风格** Markdown\n- [x] 表格、任务列表、~~删除线~~\n- [ ] 下一个功能\n\n## 快速开始\n\n```bash\nnpm install my-package\n```\n\n| 命令 | 说明 |\n| --- | --- |\n| `dev` | 启动开发服务器 |\n| `build` | 构建生产版本 |\n\n> 提示：草稿会自动保存在浏览器里。\n'
+    : '# Project name\n\nOne sentence about what this project does.\n\n## Features\n\n- [x] **GitHub-flavoured** Markdown\n- [x] Tables, task lists, ~~strikethrough~~\n- [ ] Next feature\n\n## Quick start\n\n```bash\nnpm install my-package\n```\n\n| Command | Description |\n| --- | --- |\n| `dev` | Start the dev server |\n| `build` | Build for production |\n\n> Tip: your draft is saved in this browser automatically.\n';
+---
+
+<div id="mde" data-l={JSON.stringify(L)} data-sample={sample}>
+  <div class="mb-3 flex flex-wrap items-center gap-2">
+    <span id="mde-stats" class="font-mono text-xs text-zinc-500"></span>
+    <span class="ml-auto flex flex-wrap gap-2">
+      <button type="button" class="btn px-2 py-1 text-xs" id="mde-copy-html">{L.copyHtml}</button>
+      <button type="button" class="btn px-2 py-1 text-xs" id="mde-copy-rich">{L.copyRich}</button>
+      <button type="button" class="btn px-2 py-1 text-xs" id="mde-download">{L.download}</button>
+      <button type="button" class="btn px-2 py-1 text-xs" id="mde-clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <label class="label" for="mde-in">{L.md}</label>
+      <textarea id="mde-in" class="field min-h-[32rem]" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <span class="label">{L.preview}</span>
+      <div id="mde-out" class="article min-h-[32rem] overflow-auto rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { marked } from 'marked';
+  import { copyText, flash } from '../../scripts/copy';
+  import { downloadText } from '../../scripts/download';
+  import { readingMinutes } from '../../lib/reading';
+
+  const root = document.getElementById('mde')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('mde-in') as HTMLTextAreaElement;
+  const out = document.getElementById('mde-out')!;
+  const stats = document.getElementById('mde-stats')!;
+  const KEY = 'codes.im:markdown-editor';
+
+  /** Drop scripts, frames and inline event handlers from rendered HTML. */
+  function sanitize(html: string): string {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,iframe,object,embed,style,link,meta,form').forEach((n) => n.remove());
+    doc.querySelectorAll('*').forEach((el) => {
+      for (const a of [...el.attributes]) {
+        if (/^on/i.test(a.name) || (/^(href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) el.removeAttribute(a.name);
+      }
+    });
+    return doc.body.innerHTML;
+  }
+
+  let html = '';
+  function run() {
+    html = sanitize(marked.parse(input.value, { gfm: true, async: false }) as string);
+    out.innerHTML = html;
+    const text = out.textContent ?? '';
+    const words = text.split(/\s+/).filter(Boolean).length;
+    stats.textContent = `${words} ${L.words} · ${[...text].length} ${L.chars} · ${readingMinutes(input.value)} ${L.min} · ${L.saved}`;
+    try {
+      localStorage.setItem(KEY, input.value);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  let timer = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 80);
+  });
+  document.getElementById('mde-copy-html')!.addEventListener('click', (e) => copyText(html, e.currentTarget as HTMLElement));
+  document.getElementById('mde-copy-rich')!.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLElement;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([out.textContent ?? ''], { type: 'text/plain' }) }),
+      ]);
+    } catch {
+      await copyText(out.textContent ?? '');
+    }
+    flash(btn);
+  });
+  document.getElementById('mde-download')!.addEventListener('click', () => {
+    const title = /^#\s+(.+)$/m.exec(input.value)?.[1]?.trim().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').toLowerCase();
+    downloadText(`${title || 'document'}.md`, input.value, 'text/markdown');
+  });
+  document.getElementById('mde-clear')!.addEventListener('click', () => {
+    input.value = '';
+    run();
+    input.focus();
+  });
+
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  input.value = saved || root.dataset.sample!;
+  run();
+</script>

@@ -1,0 +1,169 @@
+---
+import { type Lang } from '../../i18n/ui';
+import { PRICES_UPDATED } from '../../lib/llm-pricing';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = {
+  en: {
+    input: 'Input tokens / request',
+    output: 'Output tokens / request',
+    cached: 'Cached input',
+    rpd: 'Requests / day',
+    fromText: 'Or estimate input tokens from text',
+    textPh: 'Paste a typical prompt (system prompt + context + question)…',
+    counting: 'Counting…',
+    all: 'All',
+    model: 'Model',
+    ctx: 'Context',
+    price: 'In / Out per 1M',
+    req: 'Per request',
+    day: 'Per day',
+    month: 'Per month',
+    cheapest: 'cheapest',
+    long: 'long-context price',
+    over: 'exceeds context window',
+    updated: `Prices: USD, standard tier, from official pricing pages on ${PRICES_UPDATED}. Prices change — always confirm before budgeting.`,
+  },
+  zh: {
+    input: '每次请求输入 token',
+    output: '每次请求输出 token',
+    cached: '缓存命中比例',
+    rpd: '每天请求数',
+    fromText: '或者：从文本估算输入 token',
+    textPh: '粘贴一段典型的提示词（系统提示 + 上下文 + 问题）…',
+    counting: '计算中…',
+    all: '全部',
+    model: '模型',
+    ctx: '上下文',
+    price: '输入 / 输出（每百万）',
+    req: '每次请求',
+    day: '每天',
+    month: '每月',
+    cheapest: '最便宜',
+    long: '长上下文价格',
+    over: '超出上下文窗口',
+    updated: `价格单位为美元，标准档，取自各家官方价格页（${PRICES_UPDATED}）。价格会变动，做预算前请再次确认。`,
+  },
+}[lang];
+const providers = ['OpenAI', 'Anthropic', 'Google', 'DeepSeek'];
+---
+
+<div id="lc" data-l={JSON.stringify(L)} data-lang={lang}>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <label class="block"><span class="label">{L.input}</span><input id="lc-in" type="number" min="0" step="100" value="3000" class="field font-mono" /></label>
+    <label class="block"><span class="label">{L.output}</span><input id="lc-out" type="number" min="0" step="100" value="800" class="field font-mono" /></label>
+    <label class="block"
+      ><span class="label">{L.cached} <span id="lc-cached-v" class="font-mono normal-case">0%</span></span>
+      <input id="lc-cached" type="range" min="0" max="100" step="5" value="0" class="mt-2 w-full accent-brand-600" /></label
+    >
+    <label class="block"><span class="label">{L.rpd}</span><input id="lc-rpd" type="number" min="0" step="100" value="1000" class="field font-mono" /></label>
+  </div>
+
+  <details class="mt-4">
+    <summary class="cursor-pointer text-sm text-brand-700 dark:text-brand-400">{L.fromText}</summary>
+    <textarea id="lc-text" class="field mt-2 min-h-28!" placeholder={L.textPh}></textarea>
+    <p id="lc-text-n" class="mt-1 font-mono text-xs text-zinc-500"></p>
+  </details>
+
+  <div class="mt-5 flex flex-wrap gap-1.5">
+    <label class="chip"><input type="radio" name="lc-p" value="" checked class="sr-only" />{L.all}</label>
+    {providers.map((p) => <label class="chip"><input type="radio" name="lc-p" value={p} class="sr-only" />{p}</label>)}
+  </div>
+
+  <div class="mt-3 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <table class="w-full min-w-[640px] text-sm">
+      <thead class="bg-zinc-50 text-left text-xs text-zinc-500 dark:bg-zinc-800/50">
+        <tr>
+          <th class="px-3 py-2 font-medium">{L.model}</th>
+          <th class="px-3 py-2 font-medium">{L.ctx}</th>
+          <th class="px-3 py-2 font-medium">{L.price}</th>
+          <th class="px-3 py-2 text-right font-medium">{L.req}</th>
+          <th class="px-3 py-2 text-right font-medium">{L.day}</th>
+          <th class="px-3 py-2 text-right font-medium">{L.month}</th>
+        </tr>
+      </thead>
+      <tbody id="lc-rows" class="divide-y divide-zinc-100 font-mono text-[13px] dark:divide-zinc-800"></tbody>
+    </table>
+  </div>
+  <p class="mt-3 text-xs leading-5 text-zinc-500">{L.updated}</p>
+</div>
+
+<script>
+  import { MODELS, estimateCost, formatTokens, formatUsd } from '../../lib/llm-pricing';
+
+  const root = document.getElementById('lc')!;
+  const L = JSON.parse(root.dataset.l!);
+  const lang = root.dataset.lang as 'en' | 'zh';
+  const num = (id: string) => Math.max(0, Number((document.getElementById(id) as HTMLInputElement).value) || 0);
+  const rows = document.getElementById('lc-rows')!;
+  const cachedEl = document.getElementById('lc-cached') as HTMLInputElement;
+
+  function el(tag: string, cls: string, text = '') {
+    const e = document.createElement(tag);
+    e.className = cls;
+    e.textContent = text;
+    return e;
+  }
+
+  function render() {
+    const share = Number(cachedEl.value) / 100;
+    document.getElementById('lc-cached-v')!.textContent = `${cachedEl.value}%`;
+    const provider = (root.querySelector('input[name="lc-p"]:checked') as HTMLInputElement).value;
+    const usage = { inputTokens: num('lc-in'), outputTokens: num('lc-out'), cachedShare: share, requestsPerDay: num('lc-rpd') };
+    const list = MODELS.filter((m) => !provider || m.provider === provider)
+      .map((m) => ({ m, c: estimateCost(m, usage) }))
+      .sort((a, b) => a.c.perRequest - b.c.perRequest);
+    rows.replaceChildren(
+      ...list.map(({ m, c }, i) => {
+        const tr = el('tr', i === 0 ? 'bg-brand-50/60 dark:bg-brand-500/5' : '');
+        const name = el('td', 'px-3 py-2 font-sans');
+        const title = el('div', 'font-medium text-zinc-900 dark:text-zinc-100', m.name);
+        if (i === 0) title.append(el('span', 'ml-2 rounded bg-brand-600 px-1.5 py-0.5 text-[10px] text-white dark:bg-brand-500 dark:text-zinc-950', L.cheapest));
+        name.append(title, el('div', 'text-xs text-zinc-500', `${m.provider} · ${m.id}`));
+        const flags: string[] = [];
+        if (c.longTier) flags.push(L.long);
+        if (m.note) flags.push(m.note[lang]);
+        if (flags.length) name.append(el('div', 'text-xs text-amber-700 dark:text-amber-400', flags.join(' · ')));
+        const ctx = el('td', 'px-3 py-2 ' + (c.overContext ? 'text-red-600 dark:text-red-400' : 'text-zinc-600 dark:text-zinc-400'), m.context ? formatTokens(m.context) : '—');
+        if (c.overContext) ctx.title = L.over;
+        const p = c.longTier ? m.long! : m;
+        const price = el('td', 'px-3 py-2 text-zinc-600 dark:text-zinc-400', `$${p.input} / $${p.output}`);
+        tr.append(
+          name,
+          ctx,
+          price,
+          el('td', 'px-3 py-2 text-right', formatUsd(c.perRequest)),
+          el('td', 'px-3 py-2 text-right', formatUsd(c.perDay)),
+          el('td', 'px-3 py-2 text-right font-semibold text-zinc-900 dark:text-zinc-100', formatUsd(c.perMonth)),
+        );
+        return tr;
+      }),
+    );
+  }
+
+  root.addEventListener('input', (e) => {
+    if ((e.target as HTMLElement).id !== 'lc-text') render();
+  });
+
+  // Estimate tokens from pasted text with the o200k tokenizer (loaded on demand).
+  type Enc = { encode: (s: string) => number[] };
+  let enc: Promise<Enc> | undefined;
+  let timer = 0;
+  const text = document.getElementById('lc-text') as HTMLTextAreaElement;
+  const textN = document.getElementById('lc-text-n')!;
+  text.addEventListener('input', () => {
+    clearTimeout(timer);
+    textN.textContent = L.counting;
+    timer = window.setTimeout(async () => {
+      enc ??= import('gpt-tokenizer/encoding/o200k_base') as Promise<Enc>;
+      const n = (await enc).encode(text.value).length;
+      textN.textContent = `≈ ${n.toLocaleString()} tokens (o200k_base)`;
+      (document.getElementById('lc-in') as HTMLInputElement).value = String(n);
+      render();
+    }, 250);
+  });
+
+  render();
+</script>

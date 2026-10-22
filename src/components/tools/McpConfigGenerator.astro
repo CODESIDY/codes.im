@@ -1,0 +1,125 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+import { clientInfo, presets } from '../../lib/mcp';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { presets: 'Presets', name: 'Server name', transport: 'Type', stdio: 'Local (stdio)', http: 'Remote (HTTP)', command: 'Command', commandPh: 'npx -y @modelcontextprotocol/server-filesystem ~/Documents', env: 'Environment variables', envPh: 'API_KEY=sk-...\nONE_PER_LINE=value', url: 'Server URL', headers: 'HTTP headers', headersPh: 'Authorization: Bearer YOUR_TOKEN', where: 'Where to put it' },
+  zh: { presets: '预设', name: '服务器名称', transport: '类型', stdio: '本地（stdio）', http: '远程（HTTP）', command: '启动命令', commandPh: 'npx -y @modelcontextprotocol/server-filesystem ~/Documents', env: '环境变量', envPh: 'API_KEY=sk-...\n每行一个=value', url: '服务器地址', headers: 'HTTP 请求头', headersPh: 'Authorization: Bearer YOUR_TOKEN', where: '放在哪里' },
+}[lang];
+const clients = Object.entries(clientInfo);
+---
+
+<div id="mcp" data-presets={JSON.stringify(presets)} data-files={JSON.stringify(clientInfo)}>
+  <div class="mb-4 flex flex-wrap items-center gap-1.5">
+    <span class="mr-1 text-sm text-zinc-600 dark:text-zinc-400">{L.presets}</span>
+    {presets.map((p, i) => <button type="button" class="btn px-2 py-1 text-xs" data-preset={i}>{p.label}</button>)}
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="min-w-0 space-y-4">
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="min-w-48 flex-1">
+          <label class="label" for="mcp-name">{L.name}</label>
+          <input id="mcp-name" class="field font-mono" value="filesystem" spellcheck="false" />
+        </div>
+        <div class="flex gap-1.5 pb-1">
+          <label class="chip"><input type="radio" name="mcp-transport" value="stdio" checked class="sr-only" />{L.stdio}</label>
+          <label class="chip"><input type="radio" name="mcp-transport" value="http" class="sr-only" />{L.http}</label>
+        </div>
+      </div>
+      <div data-show="stdio">
+        <label class="label" for="mcp-cmd">{L.command}</label>
+        <input id="mcp-cmd" class="field font-mono" spellcheck="false" placeholder={L.commandPh} value="npx -y @modelcontextprotocol/server-filesystem /path/to/allowed/dir" />
+      </div>
+      <div data-show="stdio">
+        <label class="label" for="mcp-env">{L.env}</label>
+        <textarea id="mcp-env" class="field min-h-20! font-mono" spellcheck="false" placeholder={L.envPh}></textarea>
+      </div>
+      <div data-show="http" hidden>
+        <label class="label" for="mcp-url">{L.url}</label>
+        <input id="mcp-url" class="field font-mono" spellcheck="false" placeholder="https://example.com/mcp" />
+      </div>
+      <div data-show="http" hidden>
+        <label class="label" for="mcp-headers">{L.headers}</label>
+        <textarea id="mcp-headers" class="field min-h-20! font-mono" spellcheck="false" placeholder={L.headersPh}></textarea>
+      </div>
+    </div>
+
+    <div class="min-w-0">
+      <div class="mb-2 flex flex-wrap gap-1">
+        {
+          clients.map(([id, c], i) => (
+            <label class="chip">
+              <input type="radio" name="mcp-client" value={id} checked={i === 0} class="sr-only" />
+              {c.label}
+            </label>
+          ))
+        }
+      </div>
+      <div class="relative">
+        <pre id="mcp-out" class="code min-h-56 overflow-auto rounded-lg bg-zinc-900 p-4 pt-10 break-all whitespace-pre-wrap text-zinc-100 dark:bg-black"></pre>
+        <button type="button" class="btn absolute top-2 right-2 px-2 py-0.5 text-xs" data-copy="#mcp-out">{t('common.copy')}</button>
+      </div>
+      <p class="mt-3 text-xs font-medium text-zinc-500 uppercase">{L.where}</p>
+      <p id="mcp-file" class="mt-1 font-mono text-xs whitespace-pre-line text-zinc-600 dark:text-zinc-400"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { generateConfig, splitCommand, type McpClient, type McpServer } from '../../lib/mcp';
+
+  const root = document.getElementById('mcp')!;
+  const presets = JSON.parse(root.dataset.presets!) as (McpServer & { label: string })[];
+  const files = JSON.parse(root.dataset.files!) as Record<McpClient, { file: string }>;
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(`mcp-${id}`) as T;
+  const radio = (n: string) => (root.querySelector(`input[name="${n}"]:checked`) as HTMLInputElement).value;
+
+  const pairs = (text: string, sep: string): [string, string][] =>
+    text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const i = l.indexOf(sep);
+        return i > 0 ? [l.slice(0, i).trim(), l.slice(i + 1).trim()] : [l, ''];
+      });
+
+  function run() {
+    const transport = radio('mcp-transport') as 'stdio' | 'http';
+    root.querySelectorAll<HTMLElement>('[data-show]').forEach((el) => (el.hidden = el.dataset.show !== transport));
+    const { command, args } = splitCommand($<HTMLInputElement>('cmd').value);
+    const server: McpServer = {
+      name: $<HTMLInputElement>('name').value,
+      transport,
+      command,
+      args,
+      env: pairs($<HTMLTextAreaElement>('env').value, '='),
+      url: $<HTMLInputElement>('url').value.trim(),
+      headers: pairs($<HTMLTextAreaElement>('headers').value, ':'),
+    };
+    const client = radio('mcp-client') as McpClient;
+    $('out').textContent = generateConfig(server, client);
+    $('file').textContent = files[client].file;
+  }
+
+  root.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-preset]');
+    if (!b) return;
+    const p = presets[Number(b.dataset.preset)];
+    $<HTMLInputElement>('name').value = p.name;
+    (root.querySelector(`input[name="mcp-transport"][value="${p.transport}"]`) as HTMLInputElement).checked = true;
+    $<HTMLInputElement>('cmd').value = [p.command ?? '', ...(p.args ?? [])].join(' ').trim();
+    $<HTMLTextAreaElement>('env').value = (p.env ?? []).map(([k, v]) => `${k}=${v}`).join('\n');
+    $<HTMLInputElement>('url').value = p.url ?? '';
+    $<HTMLTextAreaElement>('headers').value = (p.headers ?? []).map(([k, v]) => `${k}: ${v}`).join('\n');
+    run();
+  });
+  root.addEventListener('input', run);
+  root.addEventListener('change', run);
+  run();
+</script>

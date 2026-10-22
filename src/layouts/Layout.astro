@@ -1,0 +1,108 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { htmlLang, langs, localizePath, useTranslations, type Lang } from '../i18n/ui';
+import { config } from '../config';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { ogKey, ogPath } from '../lib/og';
+const an = config.analytics;
+
+interface Props {
+  lang: Lang;
+  title: string;
+  description: string;
+  /** Structured data objects rendered as JSON-LD. */
+  jsonLd?: object[];
+  /**
+   * Paths of this page in each language. Defaults to swapping the /en/ ↔ /zh/ prefix.
+   * Pass it when a page may not exist in every language (e.g. untranslated posts).
+   */
+  alternates?: Partial<Record<Lang, string>>;
+  /** Open Graph type, e.g. "article" for posts. */
+  ogType?: string;
+  /** Absolute or root-relative URL of the social share image. */
+  ogImage?: string;
+  /** Keep the page out of search results (e.g. the résumé). */
+  noindex?: boolean;
+}
+
+const { lang, title, description, jsonLd = [], ogType = 'website', noindex = false } = Astro.props;
+// Social preview: explicit image (e.g. a post cover) → generated /og/{lang}/{page}.jpg → site default.
+const ogFile = (p: string) => existsSync(join(process.cwd(), 'public', p));
+const ogImage = Astro.props.ogImage ?? [ogPath(lang, ogKey(Astro.url.pathname)), ogPath(lang, 'index')].find(ogFile);
+const alternates = Astro.props.alternates ?? Object.fromEntries(langs.map((l) => [l, localizePath(Astro.url.pathname, l)]));
+const t = useTranslations(lang);
+const site = Astro.site ?? new URL('https://codes.im');
+const canonical = new URL(alternates[lang] ?? localizePath(Astro.url.pathname, lang), site).href;
+const fullTitle = title === 'codes.im' ? `codes.im — ${t('site.tagline')}` : `${title} | codes.im`;
+---
+
+<!doctype html>
+<html lang={htmlLang[lang]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    {
+      langs
+        .filter((l) => alternates[l])
+        .map((l) => <link rel="alternate" hreflang={htmlLang[l]} href={new URL(alternates[l]!, site).href} />)
+    }
+    {alternates.en && <link rel="alternate" hreflang="x-default" href={new URL(alternates.en, site).href} />}
+    <link rel="alternate" type="application/rss+xml" title={`codes.im (${lang})`} href={`/${lang}/rss.xml`} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#10b981" />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content="codes.im" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang === 'zh' ? 'zh_CN' : 'en_US'} />
+    {ogImage && <meta property="og:image" content={new URL(ogImage, site).href} />}
+    {ogImage && <meta property="og:image:width" content="1200" />}
+    {ogImage && <meta property="og:image:height" content="630" />}
+    {ogImage && <meta name="twitter:image" content={new URL(ogImage, site).href} />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    {import.meta.env.PROD && an.provider === 'plausible' && an.id && <script is:inline defer data-domain={an.id} src={an.src || 'https://plausible.io/js/script.js'} />}
+    {import.meta.env.PROD && an.provider === 'umami' && an.id && an.src && <script is:inline defer data-website-id={an.id} src={an.src} />}
+    {
+      import.meta.env.PROD && an.provider === 'cloudflare' && an.id && (
+        <script is:inline defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: an.id })} />
+      )
+    }
+    {jsonLd.map((data) => <script type="application/ld+json" set:html={JSON.stringify(data)} />)}
+    <script is:inline>
+      (function () {
+        try {
+          var s = localStorage.getItem('theme');
+          var dark = s ? s === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="flex min-h-screen flex-col" data-copied-label={t('common.copied')}>
+    <Header lang={lang} switchHref={alternates[lang === 'en' ? 'zh' : 'en']} />
+    <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 print:max-w-none print:p-0">
+      <slot />
+    </main>
+    <Footer lang={lang} />
+    <script>
+      import '../scripts/global';
+    </script>
+    {
+      import.meta.env.PROD && (
+        <script is:inline>
+          if ('serviceWorker' in navigator) addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+        </script>
+      )
+    }
+  </body>
+</html>

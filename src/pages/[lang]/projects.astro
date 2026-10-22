@@ -1,0 +1,58 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { projects } from '../../data/projects';
+import { langs, useTranslations, type Lang } from '../../i18n/ui';
+
+export function getStaticPaths() {
+  return langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const t = useTranslations(lang);
+const list = [...projects].sort((a, b) => Number(!!b.featured) - Number(!!a.featured));
+const statusStyle = {
+  active: 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400',
+  beta: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400',
+  archived: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+};
+---
+
+<Layout lang={lang} title={t('projects.title')} description={t('projects.description')}>
+  <p class="font-mono text-sm text-brand-600 dark:text-brand-400">$ git remote -v</p>
+  <h1 class="mt-2 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{t('projects.title')}</h1>
+  <p class="mt-2 max-w-2xl text-zinc-600 dark:text-zinc-400">{t('projects.description')}</p>
+
+  <div class="mt-8 grid gap-4 sm:grid-cols-2">
+    {
+      list.map((p) => (
+        <article class="card flex flex-col p-5">
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="font-mono text-lg font-semibold text-zinc-900 dark:text-zinc-100">{p.name}</h2>
+            <span class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>{p.status}</span>
+          </div>
+          <p class="mt-2 flex-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{p.description[lang]}</p>
+          <p class="mt-3 flex flex-wrap gap-1.5">
+            {p.tags.map((tag) => (
+              <span class="font-mono text-xs text-zinc-400">#{tag}</span>
+            ))}
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <a href={p.repo} target="_blank" rel="noopener" class="btn px-2.5 py-1 text-xs">
+              {t('projects.source')}
+            </a>
+            {p.url && (
+              <a href={p.url} target="_blank" rel="noopener" class="btn px-2.5 py-1 text-xs">
+                {t('projects.site')}
+              </a>
+            )}
+            {p.post && (
+              <a href={`/${lang}/blog/${p.post}/`} class="btn px-2.5 py-1 text-xs">
+                {t('nav.blog')}
+              </a>
+            )}
+          </div>
+        </article>
+      ))
+    }
+  </div>
+</Layout>

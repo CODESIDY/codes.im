@@ -1,0 +1,35 @@
+---
+import Layout from '../../../../layouts/Layout.astro';
+import PostCard from '../../../../components/PostCard.astro';
+import { langs, useTranslations, type Lang } from '../../../../i18n/ui';
+import { getPosts, tagSlug } from '../../../../lib/posts';
+
+export async function getStaticPaths() {
+  const paths = [];
+  for (const lang of langs) {
+    const posts = await getPosts(lang);
+    const tags = new Map<string, string>();
+    for (const p of posts) for (const tag of p.data.tags) tags.set(tagSlug(tag), tag);
+    for (const [slug, tag] of tags) {
+      paths.push({ params: { lang, tag: slug }, props: { tag, posts: posts.filter((p) => p.data.tags.some((x) => tagSlug(x) === slug)) } });
+    }
+  }
+  return paths;
+}
+
+const lang = Astro.params.lang as Lang;
+const t = useTranslations(lang);
+const { tag, posts } = Astro.props;
+---
+
+<Layout lang={lang} title={`#${tag} · ${t('blog.title')}`} description={`${t('blog.tagged')} #${tag}`} alternates={{ [lang]: Astro.url.pathname }}>
+  <nav class="mb-6 text-xs text-zinc-500">
+    <a href={`/${lang}/blog/`} class="hover:text-zinc-900 dark:hover:text-zinc-200">← {t('blog.back')}</a>
+  </nav>
+  <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+    <span class="text-zinc-400">#</span>{tag}
+  </h1>
+  <div class="mt-6 max-w-3xl space-y-3">
+    {posts.map((post) => <PostCard post={post} lang={lang} variant="row" />)}
+  </div>
+</Layout>

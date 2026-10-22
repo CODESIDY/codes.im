@@ -1,0 +1,68 @@
+---
+import { type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = {
+  en: { version: 'Version', count: 'How many', upper: 'Uppercase', hyphens: 'No hyphens', braces: '{braces}', generate: 'Generate', copyAll: 'Copy all', v4: 'v4 · random', v7: 'v7 · time-ordered' },
+  zh: { version: '版本', count: '数量', upper: '大写', hyphens: '去掉连字符', braces: '{花括号}', generate: '生成', copyAll: '全部复制', v4: 'v4 · 随机', v7: 'v7 · 按时间排序' },
+}[lang];
+---
+
+<div id="uuid">
+  <div class="flex flex-wrap items-end gap-4">
+    <div>
+      <span class="label">{L.version}</span>
+      <div class="flex gap-1.5">
+        <label class="chip"><input type="radio" name="uuid-v" value="4" checked class="sr-only" />{L.v4}</label>
+        <label class="chip"><input type="radio" name="uuid-v" value="7" class="sr-only" />{L.v7}</label>
+      </div>
+    </div>
+    <div>
+      <label class="label" for="uuid-n">{L.count}</label>
+      <input id="uuid-n" type="number" min="1" max="1000" value="10" class="field h-8 w-24 py-0" />
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+      <label class="chip"><input type="checkbox" id="uuid-upper" class="sr-only" />{L.upper}</label>
+      <label class="chip"><input type="checkbox" id="uuid-nohyph" class="sr-only" />{L.hyphens}</label>
+      <label class="chip"><input type="checkbox" id="uuid-braces" class="sr-only" />{L.braces}</label>
+    </div>
+    <div class="ml-auto flex gap-2">
+      <button type="button" id="uuid-gen" class="btn btn-primary">{L.generate}</button>
+      <button type="button" class="btn" data-copy="#uuid-out">{L.copyAll}</button>
+    </div>
+  </div>
+  <textarea id="uuid-out" class="field mt-4 min-h-72" spellcheck="false" readonly></textarea>
+</div>
+
+<script>
+  import { uuidv4, uuidv7 } from '../../lib/uuid';
+
+  const root = document.getElementById('uuid')!;
+  const out = document.getElementById('uuid-out') as HTMLTextAreaElement;
+  const n = document.getElementById('uuid-n') as HTMLInputElement;
+  const upper = document.getElementById('uuid-upper') as HTMLInputElement;
+  const nohyph = document.getElementById('uuid-nohyph') as HTMLInputElement;
+  const braces = document.getElementById('uuid-braces') as HTMLInputElement;
+
+  function generate() {
+    const v = (root.querySelector('input[name="uuid-v"]:checked') as HTMLInputElement).value;
+    const count = Math.min(1000, Math.max(1, Number(n.value) || 1));
+    const ids: string[] = [];
+    let t = Date.now();
+    for (let i = 0; i < count; i++) {
+      // v7: bump the millisecond per id so bulk output stays strictly sorted.
+      let id = v === '7' ? uuidv7(t++) : uuidv4();
+      if (nohyph.checked) id = id.replace(/-/g, '');
+      if (upper.checked) id = id.toUpperCase();
+      if (braces.checked) id = `{${id}}`;
+      ids.push(id);
+    }
+    out.value = ids.join('\n');
+  }
+
+  document.getElementById('uuid-gen')!.addEventListener('click', generate);
+  root.addEventListener('change', generate);
+  generate();
+</script>

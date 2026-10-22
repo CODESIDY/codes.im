@@ -1,0 +1,110 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { query: 'JSONPath expression', json: 'JSON', result: 'Result', matches: 'matches', values: 'Values', paths: 'Paths', examples: 'Examples' },
+  zh: { query: 'JSONPath 表达式', json: 'JSON', result: '结果', matches: '个匹配', values: '值', paths: '路径', examples: '示例' },
+}[lang];
+const examples = [
+  '$.store.book[*].title',
+  '$..author',
+  '$.store.book[?(@.price < 10)]',
+  "$.store.book[?(@.category == 'fiction' && @.isbn)].title",
+  '$.store.book[-1:]',
+  '$..price',
+];
+---
+
+<div id="jp" data-l={JSON.stringify(L)}>
+  <label class="label" for="jp-q">{L.query}</label>
+  <input id="jp-q" class="field font-mono" spellcheck="false" autocomplete="off" value="$.store.book[?(@.price < 10)].title" />
+  <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+    <span class="text-zinc-500">{L.examples}:</span>
+    {examples.map((e) => <button type="button" class="kbd cursor-pointer hover:text-brand-700 dark:hover:text-brand-400" data-ex={e}>{e}</button>)}
+  </div>
+  <p id="jp-err" class="mt-3 error-box" hidden></p>
+
+  <div class="mt-4 grid gap-4 md:grid-cols-2">
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <span class="label mb-0">{L.json}</span>
+        <button type="button" class="btn px-2 py-1 text-xs" id="jp-sample">{t('common.sample')}</button>
+      </div>
+      <textarea id="jp-json" class="field min-h-80!" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div class="mb-1.5 flex items-center justify-between gap-2">
+        <span class="label mb-0">{L.result} <span id="jp-count" class="font-mono normal-case"></span></span>
+        <span class="flex gap-1.5">
+          <label class="chip"><input type="radio" name="jp-view" value="values" checked class="sr-only" />{L.values}</label>
+          <label class="chip"><input type="radio" name="jp-view" value="paths" class="sr-only" />{L.paths}</label>
+          <button type="button" class="btn px-2 py-1 text-xs" data-copy="#jp-out">{t('common.copy')}</button>
+        </span>
+      </div>
+      <pre id="jp-out" class="code field min-h-80 overflow-auto whitespace-pre"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { query } from '../../lib/jsonpath';
+
+  const root = document.getElementById('jp')!;
+  const L = JSON.parse(root.dataset.l!);
+  const q = document.getElementById('jp-q') as HTMLInputElement;
+  const src = document.getElementById('jp-json') as HTMLTextAreaElement;
+  const out = document.getElementById('jp-out')!;
+  const err = document.getElementById('jp-err')!;
+  const count = document.getElementById('jp-count')!;
+
+  const sample = {
+    store: {
+      book: [
+        { category: 'reference', author: 'Nigel Rees', title: 'Sayings of the Century', price: 8.95 },
+        { category: 'fiction', author: 'Evelyn Waugh', title: 'Sword of Honour', price: 12.99 },
+        { category: 'fiction', author: 'Herman Melville', title: 'Moby Dick', isbn: '0-553-21311-3', price: 8.99 },
+        { category: 'fiction', author: 'J. R. R. Tolkien', title: 'The Lord of the Rings', isbn: '0-395-19395-8', price: 22.99 },
+      ],
+      bicycle: { color: 'red', price: 399 },
+    },
+  };
+
+  function run() {
+    err.hidden = true;
+    let doc: unknown;
+    try {
+      doc = JSON.parse(src.value);
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = 'JSON: ' + (e as Error).message;
+      return;
+    }
+    try {
+      const m = query(doc, q.value);
+      const view = (root.querySelector('input[name="jp-view"]:checked') as HTMLInputElement).value;
+      count.textContent = `· ${m.length} ${L.matches}`;
+      out.textContent = view === 'paths' ? m.map((x) => x.path).join('\n') : JSON.stringify(m.map((x) => x.value), null, 2);
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  }
+
+  root.addEventListener('input', run);
+  root.querySelectorAll<HTMLButtonElement>('[data-ex]').forEach((b) =>
+    b.addEventListener('click', () => {
+      q.value = b.dataset.ex!;
+      run();
+    }),
+  );
+  document.getElementById('jp-sample')!.addEventListener('click', () => {
+    src.value = JSON.stringify(sample, null, 2);
+    run();
+  });
+  if (!src.value) src.value = JSON.stringify(sample, null, 2);
+  run();
+</script>

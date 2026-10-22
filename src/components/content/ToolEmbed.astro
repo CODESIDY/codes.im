@@ -1,0 +1,31 @@
+---
+// Embed a live codes.im tool inside an .mdx article:
+//   import ToolEmbed from '../../../components/content/ToolEmbed.astro';
+//   <ToolEmbed slug="json-repair" lang="en" />
+// Each tool can be embedded at most once per page.
+import { toolComponents } from '../tools';
+import { getTool } from '../../tools/registry';
+import type { Lang } from '../../i18n/ui';
+
+interface Props {
+  slug: string;
+  lang: Lang;
+}
+const { slug, lang } = Astro.props;
+const tool = getTool(slug);
+const Widget = toolComponents[slug];
+if (!tool || !Widget) throw new Error(`ToolEmbed: unknown tool "${slug}"`);
+---
+
+<figure class="not-prose card my-8 overflow-hidden">
+  <figcaption class="flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+    <span class="flex items-center gap-2 font-medium text-zinc-700 dark:text-zinc-300">
+      <span class="font-mono text-brand-700 dark:text-brand-400">{tool.glyph}</span>
+      {tool.text[lang].name}
+    </span>
+    <a href={`/${lang}/${slug}/`} class="text-brand-700 hover:underline dark:text-brand-400">{lang === 'zh' ? '打开完整工具 →' : 'Open full tool →'}</a>
+  </figcaption>
+  <div class="p-4 text-sm">
+    <Widget lang={lang} />
+  </div>
+</figure>

@@ -1,0 +1,19 @@
+---
+// Usage in .mdx:  <Callout type="tip" title="Optional title">Text…</Callout>
+interface Props {
+  type?: 'note' | 'tip' | 'warning';
+  title?: string;
+}
+const { type = 'note', title } = Astro.props;
+const style = {
+  note: 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/40',
+  tip: 'border-brand-400 bg-brand-50 dark:border-brand-500/40 dark:bg-brand-500/10',
+  warning: 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40',
+}[type];
+const icon = { note: 'ℹ', tip: '💡', warning: '⚠' }[type];
+---
+
+<aside class={`not-prose my-6 rounded-lg border-l-4 px-4 py-3 text-sm leading-7 text-zinc-700 dark:text-zinc-300 ${style}`}>
+  {title && <p class="mb-1 font-semibold text-zinc-900 dark:text-zinc-100">{icon} {title}</p>}
+  <div class="[&_a]:underline [&_code]:rounded [&_code]:bg-white/60 [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] dark:[&_code]:bg-black/30"><slot /></div>
+</aside>

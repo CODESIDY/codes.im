@@ -1,0 +1,152 @@
+---
+import { useTranslations, type Lang } from '../../i18n/ui';
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+const L = {
+  en: { doc: 'Document', open: 'Open file', size: 'Chunk size', overlap: 'Overlap', unit: 'Measure in', tokens: 'tokens', chars: 'characters', chunks: 'chunks', avg: 'avg', max: 'max', exportJson: 'Download JSON', exportJsonl: 'Download JSONL', chunk: 'Chunk' },
+  zh: { doc: '文档', open: '打开文件', size: '块大小', overlap: '重叠', unit: '计量单位', tokens: 'token', chars: '字符', chunks: '个分块', avg: '平均', max: '最大', exportJson: '下载 JSON', exportJsonl: '下载 JSONL', chunk: '分块' },
+}[lang];
+const sample =
+  lang === 'zh'
+    ? '# 检索增强生成（RAG）\n\n检索增强生成是一种把外部知识接入大模型的方法。系统先把文档切分成小块，计算每一块的向量，存入向量数据库。\n\n用户提问时，系统先检索与问题最相关的若干分块，再把它们作为上下文交给模型生成回答。这样模型就能引用最新、私有的资料，而不只依赖训练数据。\n\n## 为什么要分块？\n\n嵌入模型有输入长度上限，而且块越小，检索命中越精确。但块太小会丢失上下文，所以通常会让相邻分块保留一部分重叠内容。'
+    : '# Retrieval-Augmented Generation\n\nRetrieval-augmented generation (RAG) connects a language model to external knowledge. Documents are split into small chunks, each chunk is embedded as a vector, and the vectors are stored in a vector database.\n\nWhen a user asks a question, the system retrieves the most relevant chunks and passes them to the model as context. The model can then cite fresh or private information instead of relying only on its training data.\n\n## Why chunk at all?\n\nEmbedding models have an input limit, and smaller chunks make retrieval more precise. Chunks that are too small lose context, though, so neighbouring chunks usually share some overlapping text.';
+---
+
+<div id="ck" data-l={JSON.stringify(L)}>
+  <div class="mb-1.5 flex items-center justify-between">
+    <label class="label mb-0" for="ck-in">{L.doc}</label>
+    <span class="flex gap-2">
+      <label class="btn px-2 py-0.5 text-xs">{L.open}<input type="file" id="ck-file" accept=".txt,.md,.markdown,.csv,.json,.html" class="sr-only" /></label>
+      <button type="button" class="btn px-2 py-0.5 text-xs" data-act="clear">{t('common.clear')}</button>
+    </span>
+  </div>
+  <textarea id="ck-in" class="field min-h-56" spellcheck="false">{sample}</textarea>
+
+  <div class="mt-4 grid gap-4 sm:grid-cols-3">
+    <div>
+      <label class="label" for="ck-size">{L.size}: <span id="ck-size-v" class="font-mono text-zinc-900 dark:text-zinc-100"></span></label>
+      <input id="ck-size" type="range" min="20" max="2000" step="10" value="60" class="w-full accent-brand-600" />
+    </div>
+    <div>
+      <label class="label" for="ck-ov">{L.overlap}: <span id="ck-ov-v" class="font-mono text-zinc-900 dark:text-zinc-100"></span></label>
+      <input id="ck-ov" type="range" min="0" max="500" step="5" value="10" class="w-full accent-brand-600" />
+    </div>
+    <div>
+      <span class="label">{L.unit}</span>
+      <div class="flex gap-1.5">
+        <label class="chip"><input type="radio" name="ck-unit" value="tokens" checked class="sr-only" />{L.tokens}</label>
+        <label class="chip"><input type="radio" name="ck-unit" value="chars" class="sr-only" />{L.chars}</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+    <p id="ck-stats" class="font-mono text-sm text-zinc-600 dark:text-zinc-400"></p>
+    <span class="flex gap-2">
+      <button type="button" class="btn px-2 py-1 text-xs" data-act="json">{L.exportJson}</button>
+      <button type="button" class="btn px-2 py-1 text-xs" data-act="jsonl">{L.exportJsonl}</button>
+    </span>
+  </div>
+  <ol id="ck-list" class="mt-3 max-h-[36rem] space-y-2 overflow-auto"></ol>
+</div>
+
+<style is:global>
+  #ck-list mark {
+    background: oklch(0.92 0.08 85 / 0.8);
+    color: inherit;
+    border-radius: 2px;
+  }
+  .dark #ck-list mark {
+    background: oklch(0.42 0.08 85 / 0.6);
+  }
+</style>
+
+<script>
+  import { chunkText, type Chunk } from '../../lib/chunk';
+  import { downloadText } from '../../scripts/download';
+
+  type Enc = { countTokens: (s: string) => number };
+
+  const root = document.getElementById('ck')!;
+  const L = JSON.parse(root.dataset.l!);
+  const input = document.getElementById('ck-in') as HTMLTextAreaElement;
+  const size = document.getElementById('ck-size') as HTMLInputElement;
+  const ov = document.getElementById('ck-ov') as HTMLInputElement;
+  const list = document.getElementById('ck-list')!;
+  const stats = document.getElementById('ck-stats')!;
+  let enc: Enc | null = null;
+  let chunks: Chunk[] = [];
+  const unit = () => (root.querySelector('input[name="ck-unit"]:checked') as HTMLInputElement).value;
+
+  import('gpt-tokenizer/encoding/o200k_base').then((m) => {
+    enc = m as unknown as Enc;
+    run();
+  });
+
+  function run() {
+    const byTokens = unit() === 'tokens';
+    document.getElementById('ck-size-v')!.textContent = size.value;
+    document.getElementById('ck-ov-v')!.textContent = ov.value;
+    if (byTokens && !enc) {
+      stats.textContent = '…';
+      return;
+    }
+    const length = byTokens ? (s: string) => enc!.countTokens(s) : undefined;
+    chunks = input.value.trim() ? chunkText(input.value, { size: Number(size.value), overlap: Number(ov.value), length }) : [];
+    const lens = chunks.map((c) => c.length);
+    const u = byTokens ? L.tokens : L.chars;
+    stats.textContent = chunks.length
+      ? `${chunks.length} ${L.chunks} · ${L.avg} ${Math.round(lens.reduce((a, b) => a + b, 0) / lens.length)} · ${L.max} ${Math.max(...lens)} ${u}`
+      : '';
+
+    list.replaceChildren(
+      ...chunks.slice(0, 500).map((c, i) => {
+        const li = document.createElement('li');
+        li.className = 'rounded-lg border border-zinc-200 p-3 dark:border-zinc-800';
+        const head = document.createElement('div');
+        head.className = 'mb-1.5 flex justify-between font-mono text-xs text-zinc-500';
+        head.innerHTML = `<span>${L.chunk} ${i + 1}</span><span>${c.length} ${u} · [${c.start}, ${c.end})</span>`;
+        const body = document.createElement('p');
+        body.className = 'text-sm leading-6 whitespace-pre-wrap text-zinc-800 dark:text-zinc-200';
+        // Highlight the part shared with the previous chunk.
+        const prevEnd = i > 0 ? chunks[i - 1].end : c.start;
+        const shared = Math.max(0, Math.min(prevEnd, c.end) - c.start);
+        if (shared > 0) {
+          const m = document.createElement('mark');
+          m.textContent = c.text.slice(0, shared);
+          body.append(m, c.text.slice(shared));
+        } else body.textContent = c.text;
+        li.append(head, body);
+        return li;
+      }),
+    );
+  }
+
+  const data = () => chunks.map((c, i) => ({ id: i, text: c.text, start: c.start, end: c.end, [unit()]: c.length }));
+  root.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+    if (act === 'json') downloadText('chunks.json', JSON.stringify(data(), null, 2), 'application/json');
+    else if (act === 'jsonl') downloadText('chunks.jsonl', data().map((d) => JSON.stringify(d)).join('\n') + '\n', 'application/jsonl');
+    else if (act === 'clear') {
+      input.value = '';
+      run();
+    }
+  });
+  (document.getElementById('ck-file') as HTMLInputElement).addEventListener('change', async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    input.value = await f.text();
+    (e.target as HTMLInputElement).value = '';
+    run();
+  });
+  let timer = 0;
+  root.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 100);
+  });
+  root.addEventListener('change', run);
+  run();
+</script>
