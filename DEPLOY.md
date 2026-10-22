@@ -1,11 +1,11 @@
 # 上线指南
 
-codes.im 是纯静态站点（`pnpm build` 输出到 `dist/`），推荐用 **Cloudflare Pages** 免费托管：全球 CDN、自带 HTTPS，`public/_headers` 里的安全头和缓存规则也会自动生效。
+codes.im 是纯静态站点（`pnpm build` 输出到 `dist/`），推荐用 **Cloudflare Workers（静态资源）** 免费托管：全球 CDN、自带 HTTPS，`public/_headers` 里的安全头和缓存规则也会自动生效。
 
 ## 0. 上线前检查
 
 - [ ] 填好 `src/config.ts`：`repo`、`github`、`email`、`author`、`bio`，可选 `avatar`、`social`、`sponsor`、`analytics`
-- [ ] 删除 `package-lock.json`（项目用 pnpm，只保留 `pnpm-lock.yaml`）
+- [ ] 确认没有 `package-lock.json`（项目用 pnpm，只保留 `pnpm-lock.yaml`）
 - [ ] 本地跑一遍：`pnpm test && pnpm check && pnpm build`
 - [ ] 读一遍《为什么 codes.im 的工具都在浏览器里运行》，改成你自己的说法
 
@@ -22,7 +22,7 @@ git push -u origin main
 
 ### 添加 CI（可选，推荐）
 
-新建 `.github/workflows/ci.yml`（文件夹已经建好，里面的 `.probe` 是测试留下的空文件，可以删掉），内容如下：
+新建 `.github/workflows/ci.yml`，内容如下：
 
 ```yaml
 name: CI
@@ -55,19 +55,23 @@ jobs:
 
 之后每次 push 和 PR 都会自动运行测试、类型检查和构建。
 
-## 2. 部署到 Cloudflare Pages
+## 2. 部署到 Cloudflare Workers
 
-1. 登录 Cloudflare → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**，选择仓库。
-2. 构建设置：
-   - Framework preset：**Astro**
-   - Build command：`pnpm build`
-   - Build output directory：`dist`
+仓库根目录的 `wrangler.jsonc` 已经指定了输出目录（`./dist`）和 404 页面，不需要在控制台里填输出目录。
+
+1. 登录 Cloudflare → **Workers & Pages** → **Create** → **Import a repository**，选择仓库。
+2. 项目名称填 `codes-im`，必须和 `wrangler.jsonc` 里的 `name` 一致，否则构建会失败。
+3. 构建设置：
+   - Build command：`pnpm run build`
+   - Deploy command：`npx wrangler deploy`（默认值）
    - 环境变量：`NODE_VERSION` = `22`
-3. 保存后会自动部署，之后每次 push 到 `main` 都会重新部署，PR 会得到预览地址。
+4. 保存后会自动部署，之后每次 push 到 `main` 都会重新部署。部署成功后会得到一个 `codes-im.<子域>.workers.dev` 地址。
+
+> `sharp` 必须保留在 `package.json` 的 `dependencies` 里。Astro 构建时要用它处理图片，pnpm 不会把间接依赖放到根目录，缺了它云端构建会报 `Could not find Sharp`。
 
 ## 3. 绑定域名 codes.im
 
-- 如果域名的 DNS 已经托管在 Cloudflare：Pages 项目 → **Custom domains** → 添加 `codes.im` 和 `www.codes.im`，记录会自动创建。
+- 如果域名的 DNS 已经托管在 Cloudflare：Worker 项目 → **Settings → Domains & Routes → Add → Custom Domain** → 添加 `codes.im` 和 `www.codes.im`，记录会自动创建。
 - 如果在其他注册商：先在 Cloudflare 添加站点，把注册商的 NS 改成 Cloudflare 提供的两个地址，生效后再按上一步操作。
 - 建议在 **Rules → Redirect Rules** 里把 `www.codes.im` 301 跳转到 `codes.im`。
 
@@ -99,7 +103,7 @@ jobs:
 | Plausible | 付费（可自托管） | `{ provider: 'plausible', id: 'codes.im' }` |
 | Umami | 免费自托管 / 云版 | `{ provider: 'umami', id: '<website id>', src: 'https://<你的 umami>/script.js' }` |
 
-> 用的是 Cloudflare Pages 的话，也可以直接在 Pages 项目里一键开启 Web Analytics，不改代码。
+> 也可以在 Cloudflare 控制台里对站点一键开启 Web Analytics，不改代码。
 
 ## 6. 赞助入口（可选）
 

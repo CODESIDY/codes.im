@@ -77,7 +77,7 @@ Every page is available in English (`/en/`) and Chinese (`/zh/`).
 - **Installable PWA** — tools you have opened keep working offline.
 - Optional cookieless analytics and sponsor links in `src/config.ts`.
 
-See **[DEPLOY.md](./DEPLOY.md)** (Chinese) for deploying to Cloudflare Pages and getting indexed.
+See **[DEPLOY.md](./DEPLOY.md)** (Chinese) for deploying to Cloudflare and getting indexed.
 
 ## Blog, tutorials & projects
 
@@ -95,7 +95,7 @@ See **[WRITING.md](./WRITING.md)** (Chinese) for how to write and publish posts.
 
 ## Tech stack
 
-[Astro](https://astro.build) 6 · TypeScript · [Tailwind CSS](https://tailwindcss.com) 4 · Web Crypto API · deployed as static files (Cloudflare Pages).
+[Astro](https://astro.build) 6 · TypeScript · [Tailwind CSS](https://tailwindcss.com) 4 · Web Crypto API · deployed as static files (Cloudflare).
 
 ## Development
 
@@ -141,11 +141,11 @@ tests/*.test.ts
 
 The home page, search, footer, sitemap and related links pick it up automatically.
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare)
 
 1. Push this repo to GitHub.
-2. In Cloudflare Pages, choose **Create project → Connect to Git** and select the repo.
-3. Set the build command to `pnpm build`, the output directory to `dist`, and the environment variable `NODE_VERSION=22`.
+2. In Cloudflare, go to **Workers & Pages → Create → Import a repository** and select the repo. Name the project `codes-im` (it must match `name` in `wrangler.jsonc`).
+3. Set the build command to `pnpm run build`, the deploy command to `npx wrangler deploy`, and the environment variable `NODE_VERSION=22`. `wrangler.jsonc` already points the static assets at `dist`.
 4. Add the custom domain `codes.im`.
 
 `public/_headers` sets security headers and long-term caching for hashed assets. The full checklist (domain, Search Console, analytics) is in [DEPLOY.md](./DEPLOY.md).
