@@ -88,3 +88,20 @@ test('color: parse and convert', () => {
   assert.equal(Math.round(contrastRatio(parseColor('#000')!, parseColor('#fff')!)), 21);
   assert.equal(parseColor('nope'), null);
 });
+
+import { buildLlmsTxt } from '../src/lib/llms-site.ts';
+
+test('buildLlmsTxt renders title, summary, sections and skips empty ones', () => {
+  const txt = buildLlmsTxt({
+    name: 'codes.im',
+    summary: 'Tools\n  that run locally',
+    sections: [
+      { title: 'Tools', links: [{ title: 'JSON Formatter', url: 'https://codes.im/en/json-formatter/', note: 'Format JSON' }, { title: 'Bare', url: 'https://codes.im/x/' }] },
+      { title: 'Empty', links: [] },
+    ],
+  });
+  assert.equal(
+    txt,
+    '# codes.im\n\n> Tools that run locally\n\n## Tools\n\n- [JSON Formatter](https://codes.im/en/json-formatter/): Format JSON\n- [Bare](https://codes.im/x/)\n',
+  );
+});
